@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.1] - 2026-05-31
+### Fixed
+- Replaced native browser checkboxes in Additional Services with custom styled checkboxes — eliminates white border appearance on all browsers and matches the dark gold theme
+
 ## [0.2.0] - 2026-05-30
 ### Added
 - Help tab in header with full accordion-style usage guide covering all estimator steps and settings

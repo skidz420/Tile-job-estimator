@@ -1,5 +1,30 @@
 import { useState, useRef } from "react";
 
+// ─── Custom Checkbox ──────────────────────────────────────────────────────────
+function Checkbox({ checked, onChange, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      onChange={onChange}
+      style={{
+        width: 18, height: 18, flexShrink: 0, cursor: "pointer",
+        borderRadius: 4,
+        border: checked ? "2px solid #c19748" : "2px solid #3a3020",
+        background: checked ? "#c19748" : "#1a1610",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "all 0.15s",
+        boxSizing: "border-box",
+      }}
+    >
+      {checked && (
+        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+          <path d="M1 4L3.5 6.5L9 1" stroke="#0f0d0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+    </div>
+  );
+}
+
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 const SEED_TILES = [
   { id: "ceramic",    name: "Ceramic",              icon: "⬜", labor: 6.0,  notes: "Standard install" },
@@ -410,7 +435,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.1</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -496,8 +521,7 @@ export default function TileEstimator() {
                   return (
                     <div key={sv.id} style={{ background: isOn ? "#1a1710" : "#141210", border: `1px solid ${isOn ? "#c19748" : "#222"}`, borderRadius: 8, overflow: "hidden", transition: "all 0.15s" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer" }} onClick={() => toggleService(sv.id)}>
-                        <input type="checkbox" checked={isOn} onChange={() => toggleService(sv.id)} onClick={e => e.stopPropagation()}
-                          style={{ accentColor: "#c19748", width: 15, height: 15, flexShrink: 0, cursor: "pointer" }} />
+                        <Checkbox checked={isOn} onChange={() => toggleService(sv.id)} onClick={e => e.stopPropagation()} />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name || "Unnamed"}</div>
                           <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>
@@ -740,6 +764,11 @@ function HelpPage() {
       icon: "🔩",
       content: "Misc Supplies is a percentage of your labor cost added automatically to cover blades, spacers, buckets, and other small items. Default Markup sets the starting markup percentage on every new estimate — you can always adjust it per job.",
     },
+    {
+      title: "Version History",
+      icon: "📝",
+      content: "v0.2.1 — Fixed checkbox appearance in Additional Services; custom dark-themed checkboxes replace browser defaults.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release: estimator, services, settings, cost breakdown, and customer quote.",
+    },
   ];
 
   return (
@@ -759,7 +788,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.0 — Tile Job Estimator · Built for tile contractors
+        v0.2.1 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
