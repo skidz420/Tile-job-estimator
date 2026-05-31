@@ -408,12 +408,15 @@ export default function TileEstimator() {
       <div style={{ background: "linear-gradient(135deg,#1a1208,#0f0f0f)", borderBottom: "1px solid #3a2e1a", padding: "28px 32px 0", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(193,151,72,0.03) 20px,rgba(193,151,72,0.03) 21px)", pointerEvents: "none" }} />
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
-          <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase", marginBottom: 6 }}>Professional Estimating Tool</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.0</div>
+          </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
           </h1>
           <div style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center" }}>
-            {[["estimate","Estimator"],["settings","⚙ Settings"]].map(([key, label]) => (
+            {[["estimate","Estimator"],["settings","⚙ Settings"],["help","? Help"]].map(([key, label]) => (
               <button key={key} onClick={() => setPage(key)} style={{
                 padding: "10px 22px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
                 fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", background: "transparent",
@@ -427,7 +430,9 @@ export default function TileEstimator() {
         </div>
       </div>
 
-      {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} /> : (
+      {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} />
+      : page === "help"     ? <HelpPage />
+      : (
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
 
           {/* 01 */}
@@ -676,6 +681,106 @@ export default function TileEstimator() {
               }}>Start New Estimate</button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Help Page ────────────────────────────────────────────────────────────────
+function HelpPage() {
+  const sections = [
+    {
+      title: "Overview",
+      icon: "📋",
+      content: "The Tile Job Estimator calculates the true cost of a tile job and generates a customer price. Fill out the estimator top to bottom, hit Calculate, and you'll get a full cost breakdown plus your profit and margin.",
+    },
+    {
+      title: "Step 1 — Square Footage",
+      icon: "📐",
+      content: "Enter the total area of the job in square feet. This number drives all per-sqft calculations throughout the estimate.",
+    },
+    {
+      title: "Step 2 — Tile Type",
+      icon: "⬜",
+      content: "Select the type of tile being installed. This sets the labor rate for the job. After selecting, enter the tile cost per sqft (what you paid for the tile) and the waste percentage. Leave tile cost at 0 if the customer supplied the tile or it hasn't been purchased yet. The app will show you how many sqft to order including waste.",
+    },
+    {
+      title: "Step 3 — Additional Services",
+      icon: "🔧",
+      content: "Check any services that apply to this job — demo, backer board, waterproof membrane, etc. Each service expands to show its individual materials and labor. All costs are pre-filled from your settings but can be overridden for this specific job without changing your defaults.",
+    },
+    {
+      title: "Step 4 — Customer Pricing",
+      icon: "💰",
+      content: "Choose between a percentage markup over your true cost or entering a manual price. The percentage markup slider lets you quickly adjust your margin. If you enter a manual price below your true cost, the app will warn you.",
+    },
+    {
+      title: "Reading the Results",
+      icon: "📊",
+      content: "The cost breakdown shows every line item — tile material, labor, thinset, grout, each service and its materials, and misc supplies. Below that, the customer quote shows your customer price, profit in dollars, and margin percentage. Green means healthy, yellow means thin, red means you're losing money.",
+    },
+    {
+      title: "Settings — Consumables & Rates",
+      icon: "🧱",
+      content: "This is your master list of all materials. Every material used across your jobs lives here — thinset, grout, membrane, clips, tape, etc. Each material has a price type: Bag (set a bag price and sqft coverage and the app calculates bags needed), Per Sqft (a straight $/sqft cost), or Flat (a fixed cost per job). Set your defaults here and they'll pre-fill on every estimate.",
+    },
+    {
+      title: "Settings — Tile Types",
+      icon: "🔲",
+      content: "Add and manage your tile types. Each tile type has a labor rate per sqft and an optional install note shown on the estimator. Tile material cost and waste are entered per job since they change with every order.",
+    },
+    {
+      title: "Settings — Services",
+      icon: "⚙️",
+      content: "Build out your services here. Each service has a name, a labor rate, and a list of materials assigned to it from your Consumables list. Tap the material pill buttons to assign or remove materials. When a service is selected on a job, the estimator pulls in all assigned materials and auto-totals them.",
+    },
+    {
+      title: "Misc Supplies & Default Markup",
+      icon: "🔩",
+      content: "Misc Supplies is a percentage of your labor cost added automatically to cover blades, spacers, buckets, and other small items. Default Markup sets the starting markup percentage on every new estimate — you can always adjust it per job.",
+    },
+  ];
+
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", letterSpacing: 4, textTransform: "uppercase", marginBottom: 8 }}>Documentation</div>
+        <div style={{ fontSize: 22, fontWeight: 400, color: "#d4c49a" }}>How to Use This App</div>
+        <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 6, fontStyle: "italic" }}>
+          A quick guide to getting accurate estimates every time
+        </div>
+      </div>
+
+      {sections.map((sec, i) => (
+        <div key={i} style={{ marginBottom: 4 }}>
+          <HelpSection icon={sec.icon} title={sec.title} content={sec.content} />
+        </div>
+      ))}
+
+      <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
+        v0.2.0 — Tile Job Estimator · Built for tile contractors
+      </div>
+    </div>
+  );
+}
+
+function HelpSection({ icon, title, content }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden", marginBottom: 8 }}>
+      <button onClick={() => setOpen(p => !p)} style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 12,
+        padding: "14px 16px", background: "transparent", border: "none",
+        cursor: "pointer", textAlign: "left",
+      }}>
+        <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
+        <span style={{ flex: 1, fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{title}</span>
+        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 16px 16px 46px", fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif", lineHeight: 1.7, borderTop: "1px solid #1e1c16" }}>
+          <div style={{ paddingTop: 12 }}>{content}</div>
         </div>
       )}
     </div>
