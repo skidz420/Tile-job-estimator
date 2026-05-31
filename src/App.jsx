@@ -523,7 +523,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.6</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.7</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -792,7 +792,7 @@ export default function TileEstimator() {
                 tile={tile}
                 tileWithWaste={tileWithWaste}
                 tilePriceSqFt={tilePriceSqFt}
-                activeServices={activeServices}
+                enabledServices={enabledServices}
                 serviceState={serviceState}
                 trueCost={trueCost}
                 customerPrice={customerPrice}
@@ -818,180 +818,140 @@ export default function TileEstimator() {
 
 // ─── Send Estimate ───────────────────────────────────────────
 function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqFt,
-  activeServices, serviceState, trueCost, customerPrice, profit, margin,
+  enabledServices, serviceState, trueCost, customerPrice, profit, margin,
   markupMode, markupPercent, onEstimateSent }) {
 
-  const [showPreview, setShowPreview]   = useState(false);
-  const [sendMode, setSendMode]         = useState(null); // "email" | "text"
-  const [terms, setTerms]               = useState(settings.defaultTerms || "");
-  const [customerName, setCustomerName] = useState("");
-  const [projectDesc, setProjectDesc]   = useState("");
-  const [sent, setSent]                 = useState(false);
+  const [showPreview, setShowPreview]   = React.useState(false);
+  const [sendMode, setSendMode]         = React.useState(null);
+  const [terms, setTerms]               = React.useState(settings.defaultTerms || "");
+  const [customerName, setCustomerName] = React.useState("");
+  const [projectDesc, setProjectDesc]   = React.useState("");
+  const [sent, setSent]                 = React.useState(false);
 
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const c = settings.contractor || {};
-  const estNum = String(settings.estimateNumber || 1).padStart(4, "0");
-  const today  = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const c       = settings.contractor || {};
+  const estNum  = String(settings.estimateNumber || 1).padStart(4, "0");
+  const nextNum = String((settings.estimateNumber || 1) + 1).padStart(4, "0");
+  const today   = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const svList  = enabledServices || [];
 
-  const serviceLines = (activeServices || []).filter(sv => serviceState[sv.id]?.enabled);
-
-  // ── Build email body ──────────────────────────────────────
-  function buildEmailBody() {
-    const divider = "────────────────────────────────";
-    const lines = [];
-
-    if (c.companyName) lines.push(c.companyName);
-    if (c.contactName) lines.push(c.contactName);
-    if (c.phone)       lines.push(c.phone);
-    if (c.email)       lines.push(c.email);
-    if (c.website)     lines.push(c.website);
-    lines.push("");
-    lines.push(divider);
-    lines.push("TILE INSTALLATION ESTIMATE");
-    lines.push(divider);
-    lines.push(`Estimate #: ${estNum}`);
-    lines.push(`Date: ${today}`);
-    if (customerName) lines.push(`Prepared for: ${customerName}`);
-    lines.push("");
-
-    if (projectDesc) {
-      lines.push(`Project: ${projectDesc}`);
-      lines.push("");
-    }
-
-    lines.push("SCOPE OF WORK");
-    lines.push(divider);
-    lines.push(`Install Area:     ${area} sqft`);
-    if (tile) lines.push(`Tile Type:        ${tile.name}`);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    lines.push(`Tile Material:    ${tileSupplied ? "Customer supplied / TBD" : fmt(parseFloat(tilePriceSqFt)) + " /sqft"}`);
-    lines.push(`Tile to Order:    ${tileWithWaste.toFixed(0)} sqft (includes waste)`);
-
-    if (serviceLines.length > 0) {
-      lines.push("");
-      lines.push("Additional Services:");
-      serviceLines.forEach(sv => lines.push(`  • ${sv.name}`));
-    }
-
-    lines.push("");
-    lines.push("ESTIMATE SUMMARY");
-    lines.push(divider);
-
-    // Material cost
-    const matCost = area * parseFloat(tilePriceSqFt || 0);
-    if (matCost > 0) lines.push(`Tile Material:    ${fmt(matCost)}`);
-    if (tile) lines.push(`Labor:            ${fmt(area * tile.laborRate)}`);
-
-    serviceLines.forEach(sv => {
-      const st = serviceState[sv.id] || {};
-      const laborCost = area * (parseFloat(st.overrides?.labor ?? sv.laborRate) || 0);
-      let svcTotal = laborCost;
-      (sv.consumableIds || []).forEach(cId => {
-        const cons = (settings.consumables || []).find(c => c.id === cId);
-        if (!cons) return;
-        const cost = parseFloat(st.overrides?.[cId] ?? (
-          cons.priceType === "bag"  ? (area / Math.max(1, parseFloat(cons.bagCoverage))) * parseFloat(cons.bagPrice) :
-          cons.priceType === "sqft" ? area * parseFloat(cons.unitCost) :
-          parseFloat(cons.unitCost)
-        ));
-        if (!isNaN(cost)) svcTotal += cost;
-      });
-      lines.push(`${sv.name}:`.padEnd(18) + fmt(svcTotal));
-    });
-
-    const miscCost = trueCost - (
-      area * parseFloat(tilePriceSqFt || 0) +
-      (tile ? area * tile.laborRate : 0) +
-      serviceLines.reduce((acc, sv) => {
-        const st = serviceState[sv.id] || {};
-        let t = area * (parseFloat(st.overrides?.labor ?? sv.laborRate) || 0);
-        (sv.consumableIds || []).forEach(cId => {
-          const cons = (settings.consumables || []).find(c => c.id === cId);
-          if (!cons) return;
-          const cost = parseFloat(st.overrides?.[cId] ?? (
-            cons.priceType === "bag"  ? (area / Math.max(1, parseFloat(cons.bagCoverage))) * parseFloat(cons.bagPrice) :
-            cons.priceType === "sqft" ? area * parseFloat(cons.unitCost) :
-            parseFloat(cons.unitCost)
-          ));
-          if (!isNaN(cost)) t += cost;
-        });
-        return acc + t;
-      }, 0)
-    );
-    if (miscCost > 0) lines.push(`Misc Supplies:    ${fmt(miscCost)}`);
-
-    lines.push("");
-    lines.push(`TOTAL:            ${fmt(customerPrice)}`);
-    lines.push(`Price per sqft:   ${fmt(customerPrice / area)}`);
-
-    if (terms.trim()) {
-      lines.push("");
-      lines.push("TERMS & CONDITIONS");
-      lines.push(divider);
-      terms.trim().split("\n").forEach(t => lines.push(t));
-    }
-
-    lines.push("");
-    lines.push(divider);
-    lines.push("Thank you for the opportunity to quote this project.");
-    lines.push("Please don\'t hesitate to reach out with any questions.");
-    if (c.contactName) lines.push("");
-    if (c.contactName) lines.push(c.contactName);
-    if (c.companyName) lines.push(c.companyName);
-    if (c.phone)       lines.push(c.phone);
-
-    return lines.join("\n");
+  function getServiceTotal(sv) {
+    const st = serviceState[sv.id] || {};
+    const labor = area * (parseFloat(st.overrides?.labor ?? sv.laborPerSqFt) || 0);
+    const mats  = (sv.consumableIds || []).reduce((sum, cId) => {
+      const cons = (settings.consumables || []).find(x => x.id === cId);
+      if (!cons) return sum;
+      const override = st.overrides?.[cId];
+      const base =
+        cons.priceType === "bag"  ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * (parseFloat(cons.bagPrice) || 0) :
+        cons.priceType === "sqft" ? area * (parseFloat(cons.unitCost) || 0) :
+        parseFloat(cons.unitCost) || 0;
+      return sum + (override !== undefined ? parseFloat(override) || 0 : base);
+    }, 0);
+    return labor + mats;
   }
 
-  // ── Build SMS body ─────────────────────────────────────────
-  function buildSMSBody() {
-    const lines = [];
-    if (c.companyName) lines.push(c.companyName);
-    lines.push(`Estimate #${estNum} — ${today}`);
-    if (customerName) lines.push(`For: ${customerName}`);
-    if (projectDesc)  lines.push(projectDesc);
-    lines.push("");
-    lines.push("SCOPE OF WORK");
-    lines.push(`• ${area} sqft — ${tile?.name || "Tile"} installation`);
-    serviceLines.forEach(sv => lines.push(`• ${sv.name}`));
-    lines.push("");
-    lines.push(`TOTAL: ${fmt(customerPrice)}`);
-    lines.push(`(${fmt(customerPrice / area)}/sqft)`);
-    if (terms.trim()) {
-      lines.push("");
-      lines.push("TERMS");
-      terms.trim().split("\n").forEach(t => lines.push(t));
+  function buildEmailBody() {
+    const D = "────────────────────────────────";
+    const L = [];
+    if (c.companyName) L.push(c.companyName);
+    if (c.contactName) L.push(c.contactName);
+    if (c.phone)       L.push(c.phone);
+    if (c.email)       L.push(c.email);
+    if (c.website)     L.push(c.website);
+    L.push(""); L.push(D);
+    L.push("TILE INSTALLATION ESTIMATE");
+    L.push(D);
+    L.push("Estimate #: " + estNum);
+    L.push("Date: " + today);
+    if (customerName) L.push("Prepared for: " + customerName);
+    L.push("");
+    if (projectDesc) { L.push("Project: " + projectDesc); L.push(""); }
+    L.push("SCOPE OF WORK"); L.push(D);
+    L.push("Install Area:     " + area + " sqft");
+    if (tile) L.push("Tile Type:        " + tile.name);
+    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
+    L.push("Tile Material:    " + (tileSupplied ? "Customer supplied / TBD" : fmt(parseFloat(tilePriceSqFt)) + " /sqft"));
+    L.push("Tile to Order:    " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
+    if (svList.length > 0) {
+      L.push("");
+      L.push("Additional Services:");
+      svList.forEach(sv => L.push("  • " + sv.name));
     }
-    if (c.phone) { lines.push(""); lines.push(`Questions? Call/text ${c.phone}`); }
-    return lines.join("\n");
+    L.push(""); L.push("ESTIMATE SUMMARY"); L.push(D);
+    const matCost = area * (parseFloat(tilePriceSqFt) || 0);
+    if (matCost > 0)  L.push("Tile Material:    " + fmt(matCost));
+    if (tile)         L.push("Labor:            " + fmt(area * (parseFloat(tile.labor) || 0)));
+    svList.forEach(sv => {
+      const t = getServiceTotal(sv);
+      L.push((sv.name + ":").padEnd(18) + fmt(t));
+    });
+    const knownCost = matCost +
+      (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
+      svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
+    const misc = trueCost - knownCost;
+    if (misc > 0.01) L.push("Misc Supplies:    " + fmt(misc));
+    L.push("");
+    L.push("TOTAL:            " + fmt(customerPrice));
+    L.push("Price per sqft:   " + fmt(customerPrice / (area || 1)));
+    if (terms.trim()) {
+      L.push(""); L.push("TERMS & CONDITIONS"); L.push(D);
+      terms.trim().split("\n").forEach(t => L.push(t));
+    }
+    L.push(""); L.push(D);
+    L.push("Thank you for the opportunity to quote this project.");
+    L.push("Please don\'t hesitate to reach out with any questions.");
+    if (c.contactName) { L.push(""); L.push(c.contactName); }
+    if (c.companyName) L.push(c.companyName);
+    if (c.phone)       L.push(c.phone);
+    return L.join("\n");
+  }
+
+  function buildSMSBody() {
+    const L = [];
+    if (c.companyName) L.push(c.companyName);
+    L.push("Estimate #" + estNum + " — " + today);
+    if (customerName) L.push("For: " + customerName);
+    if (projectDesc)  L.push(projectDesc);
+    L.push("");
+    L.push("SCOPE OF WORK");
+    L.push("• " + area + " sqft — " + (tile?.name || "Tile") + " installation");
+    svList.forEach(sv => L.push("• " + sv.name));
+    L.push("");
+    L.push("TOTAL: " + fmt(customerPrice));
+    L.push("(" + fmt(customerPrice / (area || 1)) + "/sqft)");
+    if (terms.trim()) {
+      L.push(""); L.push("TERMS");
+      terms.trim().split("\n").forEach(t => L.push(t));
+    }
+    if (c.phone) { L.push(""); L.push("Questions? Call/text " + c.phone); }
+    return L.join("\n");
   }
 
   function handleSend() {
-    const body = sendMode === "email" ? buildEmailBody() : buildSMSBody();
-    const subject = `Tile Installation Estimate #${estNum}${customerName ? " — " + customerName : ""}`;
+    const body    = sendMode === "email" ? buildEmailBody() : buildSMSBody();
+    const subject = "Tile Installation Estimate #" + estNum + (customerName ? " — " + customerName : "");
     if (sendMode === "email") {
-      window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+      window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
     } else {
-      window.open(`sms:?&body=${encodeURIComponent(body)}`);
+      window.open("sms:?&body=" + encodeURIComponent(body));
     }
     onEstimateSent();
     setSent(true);
     setTimeout(() => setSent(false), 3000);
   }
 
+  const btnStyle = {
+    padding: "13px", background: "#1a1208", border: "1px solid #3a2e1a",
+    borderRadius: 8, cursor: "pointer", color: "#c19748",
+    fontSize: 13, fontFamily: "sans-serif", fontWeight: 600, letterSpacing: 1,
+  };
+
   if (!showPreview) {
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <button onClick={() => { setShowPreview(true); setSendMode("email"); }} style={{
-          padding: "13px", background: "#1a1208", border: "1px solid #3a2e1a",
-          borderRadius: 8, cursor: "pointer", color: "#c19748",
-          fontSize: 13, fontFamily: "sans-serif", fontWeight: 600, letterSpacing: 1,
-        }}>✉ Email Estimate</button>
-        <button onClick={() => { setShowPreview(true); setSendMode("text"); }} style={{
-          padding: "13px", background: "#1a1208", border: "1px solid #3a2e1a",
-          borderRadius: 8, cursor: "pointer", color: "#c19748",
-          fontSize: 13, fontFamily: "sans-serif", fontWeight: 600, letterSpacing: 1,
-        }}>💬 Text Estimate</button>
+        <button onClick={() => { setShowPreview(true); setSendMode("email"); }} style={btnStyle}>✉ Email Estimate</button>
+        <button onClick={() => { setShowPreview(true); setSendMode("text"); }} style={btnStyle}>💬 Text Estimate</button>
       </div>
     );
   }
@@ -1000,8 +960,6 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
 
   return (
     <div style={{ background: "#13110d", border: "1px solid #3a2e1a", borderRadius: 10, padding: "20px", marginBottom: 12 }}>
-
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 700 }}>
           {sendMode === "email" ? "✉ Email Estimate" : "💬 Text Estimate"}
@@ -1011,14 +969,13 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
             padding: "5px 10px", background: "transparent", border: "1px solid #3a2e1a",
             borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 11, fontFamily: "sans-serif",
           }}>Switch to {sendMode === "email" ? "Text" : "Email"}</button>
-          <button onClick={() => setShowPreview(false)} style={{
+          <button onClick={() => { setShowPreview(false); setSendMode(null); }} style={{
             padding: "5px 10px", background: "transparent", border: "1px solid #3a2e1a",
             borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 11, fontFamily: "sans-serif",
           }}>✕ Cancel</button>
         </div>
       </div>
 
-      {/* Customer name + project */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Name</div>
@@ -1032,7 +989,6 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       </div>
 
-      {/* Terms (email mode only) */}
       {sendMode === "email" && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Terms (editable)</div>
@@ -1041,7 +997,6 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       )}
 
-      {/* Preview */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Preview</div>
         <div style={{ background: "#0a0907", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px",
@@ -1051,20 +1006,18 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       </div>
 
-      {/* Estimate number reminder */}
       <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 14, fontStyle: "italic" }}>
-        Estimate #{estNum} · Sending will increment the estimate number to #{String((settings.estimateNumber || 1) + 1).padStart(4, "0")}
+        Estimate #{estNum} · Sending will increment to #{nextNum}
       </div>
 
-      {/* Send button */}
       <button onClick={handleSend} style={{
         width: "100%", padding: "14px", background: "#1e1608",
         border: "1px solid #c19748", borderRadius: 8, cursor: "pointer",
-        color: "#c19748", fontSize: 14, fontFamily: "sans-serif",
-        fontWeight: 700, letterSpacing: 1,
+        color: "#c19748", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1,
       }}>
-        {sent ? "✓ Opened — check your " + (sendMode === "email" ? "mail app" : "messages app") :
-          (sendMode === "email" ? "Open in Mail App →" : "Open in Messages App →")}
+        {sent
+          ? "✓ Opened — check your " + (sendMode === "email" ? "mail app" : "messages app")
+          : (sendMode === "email" ? "Open in Mail App →" : "Open in Messages App →")}
       </button>
     </div>
   );
@@ -1251,6 +1204,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v0.2.7 — Fixed black screen crash on Calculate; corrected prop names in send estimate component",
           "v0.2.6 — Send estimate via email or text; contractor info settings; auto-incrementing estimate numbers; default terms block",
           "v0.2.5 — All help sections converted to rich format with headings, bullets, and formula blocks",
           "v0.2.4 — Expanded Customer Pricing help with markup formula, markup vs. margin explanation, and slider reference",
@@ -1281,7 +1235,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.6 — Tile Job Estimator · Built for tile contractors
+        v0.2.7 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
