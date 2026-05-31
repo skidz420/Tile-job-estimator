@@ -1,29 +1,24 @@
 # Changelog
 
+## [0.3.0] - 2026-05-31
+### Changed
+- **Customer-facing estimates** — email and text no longer show true cost, internal rates, or profit information
+- Every line item now shows the marked-up customer price, not your cost. The markup ratio (customerPrice ÷ trueCost) is applied proportionally across all line items so they add up exactly to the customer total
+- Removed: "True Job Cost" subtotal, labor rates, bag prices, per-sqft rates, and any internal cost figures from both email and text
+- Kept: item names, quantities (sqft ordered, services included), line amounts at customer price, total, price per sqft, terms, and contractor contact info
+- "ESTIMATE SUMMARY" and "TRUE JOB COST" headings replaced with "PRICE BREAKDOWN" and "TOTAL"
+
 ## [0.2.9] - 2026-05-31
 ### Changed
-- **Email estimate** fully itemized:
-  - Tile material with sqft ordered and price per sqft
-  - Installation labor with sqft and rate per sqft
-  - Thinset with bag count and price per bag
-  - Grout with bag count and price per bag
-  - Each additional service broken into its own section showing labor (sqft × rate) and every assigned material with quantity and unit price
-  - Misc supplies line item
-  - True job cost subtotal, then customer total and price per sqft
-- **Text estimate** itemized summary:
-  - Every line item listed with dollar amounts
-  - Services shown as individual line items
-  - Thinset, grout, misc supplies all shown
-  - Total and per-sqft price at the bottom
+- Fully itemized estimates with quantities, unit prices, and service material breakdowns
 
 ## [0.2.8] - 2026-05-31
 ### Fixed
-- Black screen on Calculate — `React.useState` used without React namespace; corrected to `useState`
+- Black screen on Calculate — React.useState corrected to useState
 
 ## [0.2.7] - 2026-05-31
 ### Fixed
-- Black screen on Calculate — `activeServices` prop was undefined; corrected to `enabledServices`
-- `sv.laborRate` corrected to `sv.laborPerSqFt`
+- Black screen on Calculate — activeServices prop corrected to enabledServices
 
 ## [0.2.6] - 2026-05-31
 ### Added
