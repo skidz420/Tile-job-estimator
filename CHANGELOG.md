@@ -1,16 +1,21 @@
 # Changelog
 
+## [0.3.1] - 2026-05-31
+### Fixed
+- **Settings not persisting** — all settings were stored in React state only and wiped on every page refresh
+- Settings now saved to device localStorage on every Save Settings tap
+- Contractor info, consumables, tile types, services, misc %, default markup, default terms, and estimate number all survive page refreshes and app restarts
+- Estimate number also persists when it auto-increments after sending
+- On first load, saved settings are merged with defaults so new fields added in future updates always exist without wiping existing data
+
 ## [0.3.0] - 2026-05-31
 ### Changed
-- **Customer-facing estimates** — email and text no longer show true cost, internal rates, or profit information
-- Every line item now shows the marked-up customer price, not your cost. The markup ratio (customerPrice ÷ trueCost) is applied proportionally across all line items so they add up exactly to the customer total
-- Removed: "True Job Cost" subtotal, labor rates, bag prices, per-sqft rates, and any internal cost figures from both email and text
-- Kept: item names, quantities (sqft ordered, services included), line amounts at customer price, total, price per sqft, terms, and contractor contact info
-- "ESTIMATE SUMMARY" and "TRUE JOB COST" headings replaced with "PRICE BREAKDOWN" and "TOTAL"
+- Customer-facing estimates — removed true cost, internal rates, and profit info
+- All line items now show marked-up customer prices; lines add up exactly to the customer total
 
 ## [0.2.9] - 2026-05-31
 ### Changed
-- Fully itemized estimates with quantities, unit prices, and service material breakdowns
+- Fully itemized estimates with quantities and service material breakdowns
 
 ## [0.2.8] - 2026-05-31
 ### Fixed
@@ -33,7 +38,7 @@
 
 ## [0.2.4] - 2026-05-31
 ### Added
-- Customer Pricing help expanded with formula, markup vs. margin, slider reference
+- Customer Pricing help with markup formula and markup vs. margin explanation
 
 ## [0.2.3] - 2026-05-31
 ### Fixed
