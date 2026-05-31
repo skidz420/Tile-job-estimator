@@ -523,7 +523,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.9</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -852,18 +852,23 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
   }
 
   function buildEmailBody() {
-    const D  = "────────────────────────────────";
-    const col = (label, value, indent) => {
-      const pad = indent ? "    " : "";
-      const maxW = 42;
-      const filled = pad + label;
-      const dots = ".".repeat(Math.max(2, maxW - filled.length - String(value).length));
-      return filled + " " + dots + " " + value;
-    };
+    const D   = "────────────────────────────────";
     const allCons = settings.consumables || [];
+    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+
+    // Apply markup ratio to a cost so all lines add up to customerPrice
+    const mp = cost => fmt(cost * ratio);
+
+    const col = (label, value, indent) => {
+      const pad  = indent ? "    " : "";
+      const full = pad + label;
+      const dots = ".".repeat(Math.max(2, 46 - full.length - String(value).length));
+      return full + " " + dots + " " + value;
+    };
+
     const L = [];
 
-    // Header
+    // ── Header ──
     if (c.companyName) L.push(c.companyName);
     if (c.contactName) L.push(c.contactName);
     if (c.phone)       L.push(c.phone);
@@ -879,62 +884,56 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     if (projectDesc)  L.push("  Project:      " + projectDesc);
     L.push(D);
 
-    // Job overview
+    // ── Job Overview ──
     L.push("");
     L.push("JOB OVERVIEW");
     L.push(D);
     L.push("  Install Area:   " + area + " sqft");
-    if (tile) {
-      L.push("  Tile Type:      " + tile.name);
-      L.push("  Labor Rate:     " + fmt(parseFloat(tile.labor) || 0) + "/sqft");
-    }
+    if (tile) L.push("  Tile Type:      " + tile.name);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    if (!tileSupplied) L.push("  Tile Cost:      " + fmt(parseFloat(tilePriceSqFt)) + "/sqft");
-    L.push("  Tile to Order:  " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
+    if (!tileSupplied) L.push("  Tile to Order:  " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
     if (svList.length > 0) L.push("  Services:       " + svList.map(sv => sv.name).join(", "));
     L.push("");
 
-    // Itemized breakdown
-    L.push("ITEMIZED COST BREAKDOWN");
+    // ── Itemized Price Breakdown ──
+    L.push("PRICE BREAKDOWN");
     L.push(D);
 
     // Tile material
     if (!tileSupplied) {
       const mc = tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-      L.push(col("Tile Material (" + tileWithWaste.toFixed(0) + " sqft @ " + fmt(parseFloat(tilePriceSqFt)) + "/sqft)", fmt(mc)));
+      L.push(col("Tile — " + tile?.name + " (" + tileWithWaste.toFixed(0) + " sqft)", mp(mc)));
     } else {
-      L.push("  Tile Material ....................... Customer supplied");
+      L.push("  Tile Material ................................. Customer supplied");
     }
 
-    // Base labor
+    // Installation
     if (tile) {
       const lc = area * (parseFloat(tile.labor) || 0);
-      L.push(col("Installation Labor (" + area + " sqft @ " + fmt(parseFloat(tile.labor) || 0) + "/sqft)", fmt(lc)));
+      L.push(col("Installation — " + tile.name, mp(lc)));
     }
 
     // Thinset
     const thinsetC = allCons.find(x => x.id === "thinset");
     if (thinsetC) {
       const bags = area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1);
-      const cost = bags * (parseFloat(thinsetC.bagPrice) || 0);
-      L.push(col("Thinset / Mortar (" + bags.toFixed(1) + " bags @ " + fmt(parseFloat(thinsetC.bagPrice) || 0) + "/bag)", fmt(cost)));
+      L.push(col("Thinset / Mortar", mp(bags * (parseFloat(thinsetC.bagPrice) || 0))));
     }
 
     // Grout
     const groutC = allCons.find(x => x.id === "grout");
     if (groutC) {
       const bags = area / Math.max(1, parseFloat(groutC.bagCoverage) || 1);
-      const cost = bags * (parseFloat(groutC.bagPrice) || 0);
-      L.push(col("Grout (" + bags.toFixed(1) + " bags @ " + fmt(parseFloat(groutC.bagPrice) || 0) + "/bag)", fmt(cost)));
+      L.push(col("Grout", mp(bags * (parseFloat(groutC.bagPrice) || 0))));
     }
 
-    // Each service fully itemized
+    // Each service — itemized, no rates shown
     svList.forEach(sv => {
       const st = serviceState[sv.id] || {};
       const laborOv = parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0;
       L.push("");
-      L.push(col(sv.name, fmt(getServiceTotal(sv))));
-      L.push(col("Labor (" + area + " sqft @ " + fmt(laborOv) + "/sqft)", fmt(area * laborOv), true));
+      L.push(col(sv.name, mp(getServiceTotal(sv))));
+      L.push(col("Labor", mp(area * laborOv), true));
       (sv.consumableIds || []).forEach(cId => {
         const cons = allCons.find(x => x.id === cId);
         if (!cons) return;
@@ -944,11 +943,7 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         const lineCost = cons.priceType === "bag"
           ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
           : cons.priceType === "sqft" ? area * effPrice : effPrice;
-        const detail = cons.priceType === "bag"
-          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)).toFixed(1) + " bags @ " + fmt(effPrice) + "/bag"
-          : cons.priceType === "sqft" ? area + " sqft @ " + fmt(effPrice) + "/sqft"
-          : "flat";
-        L.push(col(cons.name + " (" + detail + ")", fmt(lineCost), true));
+        L.push(col(cons.name, mp(lineCost), true));
       });
     });
 
@@ -960,19 +955,16 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
-    if (misc > 0.01) { L.push(""); L.push(col("Misc Supplies (blades, spacers, small consumables)", fmt(misc))); }
+    if (misc > 0.01) { L.push(""); L.push(col("Supplies & Materials", mp(misc))); }
 
-    // Totals
+    // ── Total ──
     L.push("");
     L.push(D);
-    L.push(col("TRUE JOB COST", fmt(trueCost)));
-    L.push(D);
-    L.push("");
-    L.push(col("TOTAL CUSTOMER PRICE", fmt(customerPrice)));
+    L.push(col("TOTAL", fmt(customerPrice)));
     L.push(col("Price per sqft", fmt(customerPrice / (area || 1))));
     L.push(D);
 
-    // Terms
+    // ── Terms ──
     if (terms.trim()) {
       L.push("");
       L.push("TERMS & CONDITIONS");
@@ -980,7 +972,7 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       terms.trim().split("\n").forEach(t => L.push("  " + t));
     }
 
-    // Sign-off
+    // ── Sign-off ──
     L.push("");
     L.push(D);
     L.push("Thank you for the opportunity to quote this project.");
@@ -992,28 +984,29 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     return L.join("\n");
   }
   function buildSMSBody() {
-    const D = "--------------------------------";
+    const D     = "--------------------------------";
     const allCons = settings.consumables || [];
-    const L = [];
+    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+    const mp    = cost => fmt(cost * ratio);
+    const L     = [];
+
     if (c.companyName) L.push(c.companyName);
     L.push("Estimate #" + estNum + " | " + today);
     if (customerName) L.push("For: " + customerName);
     if (projectDesc)  L.push(projectDesc);
     L.push(D);
     L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
-    if (svList.length > 0) {
-      L.push("Services: " + svList.map(sv => sv.name).join(", "));
-    }
+    if (svList.length > 0) L.push("Services: " + svList.map(sv => sv.name).join(", "));
     L.push("");
-    L.push("COST BREAKDOWN");
+    L.push("PRICE BREAKDOWN");
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    if (!tileSupplied) L.push("  Tile material ......... " + fmt(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
-    if (tile)          L.push("  Install labor ......... " + fmt(area * (parseFloat(tile.labor) || 0)));
+    if (!tileSupplied) L.push("  Tile material ......... " + mp(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
+    if (tile)          L.push("  Installation .......... " + mp(area * (parseFloat(tile.labor) || 0)));
     const thinsetC = allCons.find(x => x.id === "thinset");
     const groutC   = allCons.find(x => x.id === "grout");
-    if (thinsetC) L.push("  Thinset ............... " + fmt((area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0)));
-    if (groutC)   L.push("  Grout .................. " + fmt((area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0)));
-    svList.forEach(sv => L.push("  " + sv.name + " ........ " + fmt(getServiceTotal(sv))));
+    if (thinsetC) L.push("  Thinset ............... " + mp((area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0)));
+    if (groutC)   L.push("  Grout .................. " + mp((area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0)));
+    svList.forEach(sv => L.push("  " + sv.name + " ........ " + mp(getServiceTotal(sv))));
     const knownCost =
       (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
       (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
@@ -1021,7 +1014,7 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
-    if (misc > 0.01) L.push("  Misc supplies ......... " + fmt(misc));
+    if (misc > 0.01) L.push("  Supplies & materials ... " + mp(misc));
     L.push(D);
     L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
     if (terms.trim()) {
@@ -1308,7 +1301,8 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
-          "v0.2.9 — Fully itemized estimates: every line item, quantity, unit price, and service material broken out in email and text",
+          "v0.3.0 — Customer-facing estimates: removed true cost and internal rates; all line items show marked-up customer prices only",
+          "v0.2.9 — Fully itemized estimates: every line item broken out with quantities and unit prices",
           "v0.2.8 — Fixed black screen: React.useState used without React namespace import; corrected to useState",
           "v0.2.7 — Fixed black screen crash on Calculate; corrected prop names in send estimate component",
           "v0.2.6 — Send estimate via email or text; contractor info settings; auto-incrementing estimate numbers; default terms block",
@@ -1341,7 +1335,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.9 — Tile Job Estimator · Built for tile contractors
+        v0.3.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
