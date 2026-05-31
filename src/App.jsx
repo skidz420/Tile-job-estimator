@@ -412,20 +412,33 @@ function SField({ label, value, onChange, hint, suffix, isText }) {
 // ─── Main Estimator ───────────────────────────────────────────────────────────
 export default function TileEstimator() {
   const [page, setPage] = useState("estimate");
-  const [settings, setSettings] = useState({
-    miscPercent: 3, defaultMarkup: 40,
-    consumables: SEED_CONSUMABLES,
-    tiles: SEED_TILES,
-    services: SEED_SERVICES,
-    contractor: {
-      companyName: "",
-      contactName: "",
-      phone: "",
-      email: "",
-      website: "",
-    },
-    estimateNumber: 1,
-    defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
+  const [settings, setSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tje_settings");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Merge with defaults so new fields added in updates always exist
+        return {
+          miscPercent: 3, defaultMarkup: 40,
+          consumables: SEED_CONSUMABLES,
+          tiles: SEED_TILES,
+          services: SEED_SERVICES,
+          contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
+          estimateNumber: 1,
+          defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
+          ...parsed,
+        };
+      }
+    } catch (e) {}
+    return {
+      miscPercent: 3, defaultMarkup: 40,
+      consumables: SEED_CONSUMABLES,
+      tiles: SEED_TILES,
+      services: SEED_SERVICES,
+      contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
+      estimateNumber: 1,
+      defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
+    };
   });
   const [savedMsg, setSavedMsg] = useState(false);
 
@@ -442,6 +455,7 @@ export default function TileEstimator() {
   const resultRef = useRef(null);
 
   function handleSaveSettings(s) {
+    try { localStorage.setItem("tje_settings", JSON.stringify(s)); } catch (e) {}
     setSettings(s);
     setMarkupPercent(nv(s.defaultMarkup, 40));
     if (selectedTileId && !s.tiles.find(t => t.id === selectedTileId)) setSelectedTileId(null);
@@ -523,7 +537,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.1</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -800,7 +814,11 @@ export default function TileEstimator() {
                 margin={margin}
                 markupMode={markupMode}
                 markupPercent={markupPercent}
-                onEstimateSent={() => setSettings(p => ({ ...p, estimateNumber: p.estimateNumber + 1 }))}
+                onEstimateSent={() => setSettings(p => {
+                  const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
+                  try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
+                  return next;
+                })}
               />
               <button onClick={resetEstimate} style={{
                 width: "100%", padding: "14px", background: "transparent",
@@ -1301,6 +1319,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v0.3.1 — Settings now persist across sessions — contractor info, tile types, services, and estimate number all saved to device storage",
           "v0.3.0 — Customer-facing estimates: removed true cost and internal rates; all line items show marked-up customer prices only",
           "v0.2.9 — Fully itemized estimates: every line item broken out with quantities and unit prices",
           "v0.2.8 — Fixed black screen: React.useState used without React namespace import; corrected to useState",
@@ -1335,7 +1354,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.3.0 — Tile Job Estimator · Built for tile contractors
+        v0.3.1 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
