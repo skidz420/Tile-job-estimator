@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.5] - 2026-05-31
+### Changed
+- All help sections converted from plain text to rich content format — headings, bullet lists, and formula blocks now render properly throughout the entire Help tab
+- Overview section expanded with a full bullet list of what the app covers
+- Step 1 expanded with measuring tips
+- Step 2 expanded with waste % guidance by install type
+- Step 3 expanded with how per-job overrides work and a list of common services
+- Reading the Results expanded with color coding reference and per-sqft summary explanation
+- Settings — Consumables & Rates expanded with price type descriptions and misc supplies explanation
+- Settings — Tile Types expanded with what to set here vs. what gets set per job
+- Settings — Services expanded with setup instructions and per-job override explanation
+- Misc Supplies & Default Markup expanded with the misc supplies formula
+
 ## [0.2.4] - 2026-05-31
 ### Added
 - Customer Pricing help section fully expanded with markup formula, markup vs. margin explanation, slider reference guide, and manual price mode description
@@ -9,7 +22,6 @@
 ### Fixed
 - Consumables & Rates redesigned from a cramped inline grid to a card-per-row layout — material names now display in full regardless of length
 - Each consumable card shows the full name in a dedicated header row, with Price Type, Cost, and Coverage/Note on a second row below it
-- Removed the fixed-column-width grid that was truncating long names like "Self-Leveling Compound" and "Waterproof Membrane"
 
 ## [0.2.2] - 2026-05-31
 ### Fixed
