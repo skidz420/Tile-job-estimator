@@ -146,52 +146,68 @@ function SettingsPage({ settings, onSave }) {
             All materials used across your jobs. Services pull from this list. Thinset and grout use bag pricing; others can be per sqft or flat.
           </div>
 
-          {/* Column headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px 80px 36px", gap: 8, padding: "0 4px 8px", marginBottom: 4 }}>
-            {["Material Name", "Price Type", "Cost", "Coverage / Note", ""].map((h, i) => (
-              <div key={i} style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1 }}>{h}</div>
-            ))}
-          </div>
-
           {s.consumables.map(c => (
-            <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px 80px 36px", gap: 8, marginBottom: 10, alignItems: "start" }}>
-              {/* Name */}
-              <div>
-                <input placeholder="Material name" value={c.name} onChange={e => updateC(c.id, "name", e.target.value)} style={iStyle} />
-                {c.note !== undefined && (
-                  <input placeholder="Note (optional)" value={c.note} onChange={e => updateC(c.id, "note", e.target.value)}
-                    style={{ ...iStyle, marginTop: 4, fontSize: 11, color: "#8a7d65" }} />
+            <div key={c.id} style={{ marginBottom: 10, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 14px" }}>
+              {/* Row 1: Name + delete */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    placeholder="Material name"
+                    value={c.name}
+                    onChange={e => updateC(c.id, "name", e.target.value)}
+                    style={{ ...iStyle, fontSize: 14, fontWeight: 600, color: "#d4c49a" }}
+                  />
+                </div>
+                <button onClick={() => deleteC(c.id)} style={delBtnStyle}>✕</button>
+              </div>
+              {/* Row 2: Price type + cost + coverage */}
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 8, alignItems: "start" }}>
+                {/* Price type */}
+                <div>
+                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Price Type</div>
+                  <select value={c.priceType} onChange={e => updateC(c.id, "priceType", e.target.value)}
+                    style={{ ...iStyle, cursor: "pointer", fontSize: 12 }}>
+                    {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "Bag" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
+                  </select>
+                </div>
+                {/* Cost */}
+                <div>
+                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                    {c.priceType === "bag" ? "Bag Price" : "Unit Cost"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    <span style={{ color: "#5a4f38", fontSize: 12, flexShrink: 0 }}>$</span>
+                    <input type="number" placeholder="0.00"
+                      value={c.priceType === "bag" ? c.bagPrice : c.unitCost}
+                      onChange={e => updateC(c.id, c.priceType === "bag" ? "bagPrice" : "unitCost", e.target.value)}
+                      style={{ ...iStyle, flex: 1 }} />
+                  </div>
+                </div>
+                {/* Coverage or unit label */}
+                {c.priceType === "bag" ? (
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Coverage</div>
+                    <input type="number" placeholder="sqft/bag"
+                      value={c.bagCoverage}
+                      onChange={e => updateC(c.id, "bagCoverage", e.target.value)}
+                      style={iStyle} />
+                    <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", marginTop: 3 }}>sqft per bag</div>
+                  </div>
+                ) : (
+                  <div style={{ paddingTop: 22 }}>
+                    <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>
+                      {c.priceType === "sqft" ? "charged per sqft" : "flat per job"}
+                    </div>
+                  </div>
                 )}
               </div>
-              {/* Price type */}
-              <select value={c.priceType} onChange={e => updateC(c.id, "priceType", e.target.value)}
-                style={{ ...iStyle, cursor: "pointer", fontSize: 12 }}>
-                {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "Bag" : pt === "sqft" ? "Per sqft" : "Flat"}</option>)}
-              </select>
-              {/* Cost field */}
-              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <span style={{ color: "#5a4f38", fontSize: 12, flexShrink: 0 }}>$</span>
-                <input type="number" placeholder="0.00"
-                  value={c.priceType === "bag" ? c.bagPrice : c.unitCost}
-                  onChange={e => updateC(c.id, c.priceType === "bag" ? "bagPrice" : "unitCost", e.target.value)}
-                  style={{ ...iStyle, flex: 1 }} />
-              </div>
-              {/* Coverage (bag only) or note */}
-              {c.priceType === "bag" ? (
-                <div>
-                  <input type="number" placeholder="sqft/bag"
-                    value={c.bagCoverage}
-                    onChange={e => updateC(c.id, "bagCoverage", e.target.value)}
-                    style={iStyle} />
-                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", marginTop: 3 }}>sqft/bag</div>
-                </div>
-              ) : (
-                <div style={{ fontSize: 11, color: "#4a4030", fontFamily: "sans-serif", paddingTop: 8 }}>
-                  {c.priceType === "sqft" ? "per sqft" : "per job"}
+              {/* Row 3: Note */}
+              {c.note !== undefined && (
+                <div style={{ marginTop: 8 }}>
+                  <input placeholder="Note (optional)" value={c.note} onChange={e => updateC(c.id, "note", e.target.value)}
+                    style={{ ...iStyle, fontSize: 11, color: "#8a7d65" }} />
                 </div>
               )}
-              {/* Delete */}
-              <button onClick={() => deleteC(c.id)} style={delBtnStyle}>✕</button>
             </div>
           ))}
           <button onClick={addC} style={addBtnStyle}>+ Add Material</button>
@@ -435,7 +451,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.2</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.3</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -767,7 +783,7 @@ function HelpPage() {
     {
       title: "Version History",
       icon: "📝",
-      content: "v0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
+      content: "v0.2.3 — Consumables & Rates redesigned to card layout — full material names always visible.\nv0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
     },
   ];
 
@@ -788,7 +804,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.2 — Tile Job Estimator · Built for tile contractors
+        v0.2.3 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
