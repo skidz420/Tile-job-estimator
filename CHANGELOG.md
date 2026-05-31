@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.4] - 2026-05-31
+### Added
+- Customer Pricing help section fully expanded with markup formula, markup vs. margin explanation, slider reference guide, and manual price mode description
+- Help section now supports rich content rendering — headings, bullet lists, and formula blocks within accordion items
+
 ## [0.2.3] - 2026-05-31
 ### Fixed
 - Consumables & Rates redesigned from a cramped inline grid to a card-per-row layout — material names now display in full regardless of length
