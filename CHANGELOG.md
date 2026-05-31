@@ -1,22 +1,36 @@
 # Changelog
 
+## [0.2.9] - 2026-05-31
+### Changed
+- **Email estimate** fully itemized:
+  - Tile material with sqft ordered and price per sqft
+  - Installation labor with sqft and rate per sqft
+  - Thinset with bag count and price per bag
+  - Grout with bag count and price per bag
+  - Each additional service broken into its own section showing labor (sqft × rate) and every assigned material with quantity and unit price
+  - Misc supplies line item
+  - True job cost subtotal, then customer total and price per sqft
+- **Text estimate** itemized summary:
+  - Every line item listed with dollar amounts
+  - Services shown as individual line items
+  - Thinset, grout, misc supplies all shown
+  - Total and per-sqft price at the bottom
+
 ## [0.2.8] - 2026-05-31
 ### Fixed
-- **Black screen on Calculate** — `SendEstimateButtons` was calling `React.useState` but the file only imports `{ useState }` (named import, no React namespace). React is not in scope as a global in Vite/JSX projects. Corrected all 6 hook calls to `useState`.
+- Black screen on Calculate — `React.useState` used without React namespace; corrected to `useState`
 
 ## [0.2.7] - 2026-05-31
 ### Fixed
-- Black screen on Calculate — `activeServices` prop was undefined (variable is `enabledServices`); corrected prop name
-- `sv.laborRate` corrected to `sv.laborPerSqFt` in service cost calculations inside send component
+- Black screen on Calculate — `activeServices` prop was undefined; corrected to `enabledServices`
+- `sv.laborRate` corrected to `sv.laborPerSqFt`
 
 ## [0.2.6] - 2026-05-31
 ### Added
-- Send Estimate via Email or Text from the results card
-- Contractor Info settings tab — company name, contact name, phone, email, website
-- Auto-incrementing estimate numbers configurable in Settings
-- Default Terms block in Settings, editable per send
-- Customer name and project description fields in send panel
-- Live preview before sending; terms editable in email mode
+- Send Estimate via Email or Text
+- Contractor Info settings tab
+- Auto-incrementing estimate numbers
+- Default Terms block in Settings
 
 ## [0.2.5] - 2026-05-31
 ### Changed
