@@ -523,7 +523,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.7</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.8</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -821,12 +821,12 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
   markupMode, markupPercent, onEstimateSent }) {
 
-  const [showPreview, setShowPreview]   = React.useState(false);
-  const [sendMode, setSendMode]         = React.useState(null);
-  const [terms, setTerms]               = React.useState(settings.defaultTerms || "");
-  const [customerName, setCustomerName] = React.useState("");
-  const [projectDesc, setProjectDesc]   = React.useState("");
-  const [sent, setSent]                 = React.useState(false);
+  const [showPreview, setShowPreview]   = useState(false);
+  const [sendMode, setSendMode]         = useState(null);
+  const [terms, setTerms]               = useState(settings.defaultTerms || "");
+  const [customerName, setCustomerName] = useState("");
+  const [projectDesc, setProjectDesc]   = useState("");
+  const [sent, setSent]                 = useState(false);
 
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const c       = settings.contractor || {};
@@ -1204,6 +1204,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v0.2.8 — Fixed black screen: React.useState used without React namespace import; corrected to useState",
           "v0.2.7 — Fixed black screen crash on Calculate; corrected prop names in send estimate component",
           "v0.2.6 — Send estimate via email or text; contractor info settings; auto-incrementing estimate numbers; default terms block",
           "v0.2.5 — All help sections converted to rich format with headings, bullets, and formula blocks",
@@ -1235,7 +1236,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.7 — Tile Job Estimator · Built for tile contractors
+        v0.2.8 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
