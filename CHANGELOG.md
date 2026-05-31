@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3] - 2026-05-31
+### Fixed
+- Consumables & Rates redesigned from a cramped inline grid to a card-per-row layout — material names now display in full regardless of length
+- Each consumable card shows the full name in a dedicated header row, with Price Type, Cost, and Coverage/Note on a second row below it
+- Removed the fixed-column-width grid that was truncating long names like "Self-Leveling Compound" and "Waterproof Membrane"
+
 ## [0.2.2] - 2026-05-31
 ### Fixed
 - Added `color-scheme: dark` meta tag and body styles to index.html — tells iOS Safari this is a dark app, preventing it from injecting light-mode backgrounds or rendering borders in unexpected colors
