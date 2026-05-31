@@ -451,7 +451,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.3</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.4</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -753,7 +753,21 @@ function HelpPage() {
     {
       title: "Step 4 — Customer Pricing",
       icon: "💰",
-      content: "Choose between a percentage markup over your true cost or entering a manual price. The percentage markup slider lets you quickly adjust your margin. If you enter a manual price below your true cost, the app will warn you.",
+      content: [
+        { type: "p", text: "Choose between a percentage markup over your true cost or a manual flat price." },
+        { type: "h", text: "Markup Mode" },
+        { type: "p", text: "The app adds a percentage on top of your true cost:" },
+        { type: "formula", text: "Customer Price = True Cost × (1 + Markup% ÷ 100)" },
+        { type: "p", text: "Example: $1,000 true cost at 40% markup → $1,000 × 1.40 = $1,400 customer price." },
+        { type: "h", text: "Markup vs. Margin — Not the Same Number" },
+        { type: "p", text: "Markup is calculated on your cost. Margin is calculated on your selling price. Using the example above:" },
+        { type: "bullets", items: ["Markup: $400 profit ÷ $1,000 cost = 40%", "Margin: $400 profit ÷ $1,400 price = 28.6%"] },
+        { type: "p", text: "Both numbers are correct — they just measure different things. Margin will always be lower than your markup." },
+        { type: "h", text: "Slider Reference" },
+        { type: "bullets", items: ["0% — you charge your exact cost, zero profit", "40% — common starting point for tile contractors", "100% — you charge double your cost (cost × 2)", "150% — you charge 2.5× your cost"] },
+        { type: "h", text: "Manual Price Mode" },
+        { type: "p", text: "If you already quoted a flat number to the customer, switch to Manual Price and type it in. The app works backwards from that number to show your profit and margin. If the price is below your true cost, a red warning appears." },
+      ],
     },
     {
       title: "Reading the Results",
@@ -783,7 +797,7 @@ function HelpPage() {
     {
       title: "Version History",
       icon: "📝",
-      content: "v0.2.3 — Consumables & Rates redesigned to card layout — full material names always visible.\nv0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
+      content: "v0.2.4 — Expanded Customer Pricing help with markup formula, markup vs. margin explanation, and slider reference.\nv0.2.3 — Consumables & Rates redesigned to card layout — full material names always visible.\nv0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
     },
   ];
 
@@ -804,8 +818,34 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.3 — Tile Job Estimator · Built for tile contractors
+        v0.2.4 — Tile Job Estimator · Built for tile contractors
       </div>
+    </div>
+  );
+}
+
+function RichContent({ blocks }) {
+  return (
+    <div>
+      {blocks.map((b, i) => {
+        if (b.type === "p") return (
+          <p key={i} style={{ margin: "0 0 10px", color: "#8a7d65", fontSize: 13, fontFamily: "sans-serif", lineHeight: 1.7 }}>{b.text}</p>
+        );
+        if (b.type === "h") return (
+          <div key={i} style={{ marginTop: 14, marginBottom: 6, fontSize: 12, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>{b.text}</div>
+        );
+        if (b.type === "formula") return (
+          <div key={i} style={{ margin: "8px 0 12px", padding: "10px 14px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, fontSize: 13, color: "#e8c870", fontFamily: "monospace", letterSpacing: 0.5 }}>{b.text}</div>
+        );
+        if (b.type === "bullets") return (
+          <ul key={i} style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+            {b.items.map((item, j) => (
+              <li key={j} style={{ color: "#8a7d65", fontSize: 13, fontFamily: "sans-serif", lineHeight: 1.7, marginBottom: 3 }}>{item}</li>
+            ))}
+          </ul>
+        );
+        return null;
+      })}
     </div>
   );
 }
@@ -825,7 +865,9 @@ function HelpSection({ icon, title, content }) {
       </button>
       {open && (
         <div style={{ padding: "0 16px 16px 46px", fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif", lineHeight: 1.7, borderTop: "1px solid #1e1c16" }}>
-          <div style={{ paddingTop: 12 }}>{content}</div>
+          <div style={{ paddingTop: 12 }}>
+            {Array.isArray(content) ? <RichContent blocks={content} /> : content}
+          </div>
         </div>
       )}
     </div>
