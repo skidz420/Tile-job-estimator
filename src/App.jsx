@@ -451,7 +451,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.4</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.5</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -733,22 +733,71 @@ function HelpPage() {
     {
       title: "Overview",
       icon: "📋",
-      content: "The Tile Job Estimator calculates the true cost of a tile job and generates a customer price. Fill out the estimator top to bottom, hit Calculate, and you'll get a full cost breakdown plus your profit and margin.",
+      content: [
+        { type: "p", text: "The Tile Job Estimator calculates the true cost of a tile job and generates a customer price." },
+        { type: "p", text: "Fill out the estimator top to bottom, hit Calculate, and you'll get a full cost breakdown plus your profit and margin." },
+        { type: "h", text: "What It Covers" },
+        { type: "bullets", items: [
+          "Tile material cost with waste factor",
+          "Labor based on tile type",
+          "Thinset and grout calculated from square footage",
+          "Additional services — demo, backer board, membrane, leveling, sealer, and more",
+          "Misc supplies as a percentage of labor",
+          "Customer price with markup, profit in dollars, and margin percentage",
+        ]},
+      ],
     },
     {
       title: "Step 1 — Square Footage",
       icon: "📐",
-      content: "Enter the total area of the job in square feet. This number drives all per-sqft calculations throughout the estimate.",
+      content: [
+        { type: "p", text: "Enter the total area of the job in square feet. This number drives every per-sqft calculation in the estimate." },
+        { type: "h", text: "Tips" },
+        { type: "bullets", items: [
+          "Measure length × width for rectangular rooms",
+          "For L-shaped or irregular spaces, break them into rectangles and add the totals",
+          "Enter the net tile area — waste is added separately in Step 2",
+        ]},
+      ],
     },
     {
       title: "Step 2 — Tile Type",
       icon: "⬜",
-      content: "Select the type of tile being installed. This sets the labor rate for the job. After selecting, enter the tile cost per sqft (what you paid for the tile) and the waste percentage. Leave tile cost at 0 if the customer supplied the tile or it hasn't been purchased yet. The app will show you how many sqft to order including waste.",
+      content: [
+        { type: "p", text: "Select the type of tile being installed. This sets the labor rate for the job." },
+        { type: "h", text: "Tile Cost Per Sqft" },
+        { type: "p", text: "Enter what you paid for the tile per sqft. Leave it at 0 if the customer supplied the tile or it hasn't been purchased yet — it will show as not included in the breakdown." },
+        { type: "h", text: "Waste %" },
+        { type: "p", text: "The waste percentage accounts for cuts, breakage, and pattern matching. The app calculates how many sqft to order automatically." },
+        { type: "bullets", items: [
+          "Standard install — 10%",
+          "Diagonal or pattern layout — 15%",
+          "Complex cuts or large format — 15–20%",
+        ]},
+      ],
     },
     {
       title: "Step 3 — Additional Services",
       icon: "🔧",
-      content: "Check any services that apply to this job — demo, backer board, waterproof membrane, etc. Each service expands to show its individual materials and labor. All costs are pre-filled from your settings but can be overridden for this specific job without changing your defaults.",
+      content: [
+        { type: "p", text: "Check any services that apply to this job. Each service expands to show its labor and materials." },
+        { type: "h", text: "How It Works" },
+        { type: "bullets", items: [
+          "Each service pulls its materials from your Consumables & Rates settings",
+          "All costs are pre-filled from your defaults",
+          "You can override any cost for this specific job without changing your defaults",
+          "The service total updates live as you adjust values",
+        ]},
+        { type: "h", text: "Common Services" },
+        { type: "bullets", items: [
+          "Cement Backer Board — substrate for wet areas",
+          "Waterproof Membrane — shower floors, wet rooms",
+          "Leveling Clips System — large format tile on imperfect floors",
+          "Demo / Removal — tear out existing tile or flooring",
+          "Subfloor Prep — self-leveling compound and primer",
+          "Stone / Grout Sealer — required for natural stone",
+        ]},
+      ],
     },
     {
       title: "Step 4 — Customer Pricing",
@@ -764,7 +813,12 @@ function HelpPage() {
         { type: "bullets", items: ["Markup: $400 profit ÷ $1,000 cost = 40%", "Margin: $400 profit ÷ $1,400 price = 28.6%"] },
         { type: "p", text: "Both numbers are correct — they just measure different things. Margin will always be lower than your markup." },
         { type: "h", text: "Slider Reference" },
-        { type: "bullets", items: ["0% — you charge your exact cost, zero profit", "40% — common starting point for tile contractors", "100% — you charge double your cost (cost × 2)", "150% — you charge 2.5× your cost"] },
+        { type: "bullets", items: [
+          "0% — you charge your exact cost, zero profit",
+          "40% — common starting point for tile contractors",
+          "100% — you charge double your cost (cost × 2)",
+          "150% — you charge 2.5× your cost",
+        ]},
         { type: "h", text: "Manual Price Mode" },
         { type: "p", text: "If you already quoted a flat number to the customer, switch to Manual Price and type it in. The app works backwards from that number to show your profit and margin. If the price is below your true cost, a red warning appears." },
       ],
@@ -772,32 +826,97 @@ function HelpPage() {
     {
       title: "Reading the Results",
       icon: "📊",
-      content: "The cost breakdown shows every line item — tile material, labor, thinset, grout, each service and its materials, and misc supplies. Below that, the customer quote shows your customer price, profit in dollars, and margin percentage. Green means healthy, yellow means thin, red means you're losing money.",
+      content: [
+        { type: "h", text: "Cost Breakdown" },
+        { type: "p", text: "Every line item is listed — tile material, labor, thinset, grout, each service with its materials broken out, and misc supplies." },
+        { type: "h", text: "Customer Quote" },
+        { type: "bullets", items: [
+          "Customer Price — what you charge",
+          "Your Profit — customer price minus true cost in dollars",
+          "Margin — profit as a percentage of the customer price",
+        ]},
+        { type: "h", text: "Color Coding" },
+        { type: "bullets", items: [
+          "Green — healthy margin (25%+)",
+          "Yellow — thin margin (10–25%)",
+          "Red — below 10% or losing money",
+        ]},
+        { type: "h", text: "Per Sqft Summary" },
+        { type: "p", text: "The bottom of the breakdown shows your price per sqft and true cost per sqft — useful for quickly comparing against your gut feel on a job." },
+      ],
     },
     {
       title: "Settings — Consumables & Rates",
       icon: "🧱",
-      content: "This is your master list of all materials. Every material used across your jobs lives here — thinset, grout, membrane, clips, tape, etc. Each material has a price type: Bag (set a bag price and sqft coverage and the app calculates bags needed), Per Sqft (a straight $/sqft cost), or Flat (a fixed cost per job). Set your defaults here and they'll pre-fill on every estimate.",
+      content: [
+        { type: "p", text: "Your master list of all materials. Every material used across your jobs lives here — thinset, grout, membrane, clips, tape, and more." },
+        { type: "h", text: "Price Types" },
+        { type: "bullets", items: [
+          "Bag — enter a bag price and sqft coverage; the app calculates how many bags are needed based on the job area",
+          "Per Sqft — a straight $/sqft cost multiplied by the job area",
+          "Flat — a fixed cost per job regardless of size",
+        ]},
+        { type: "h", text: "Misc Supplies %" },
+        { type: "p", text: "A percentage of your labor cost added automatically to every estimate to cover blades, spacers, buckets, and other consumables too small to track individually." },
+        { type: "h", text: "Default Markup %" },
+        { type: "p", text: "Pre-fills the markup field on every new estimate. Set it to your typical rate and adjust per job as needed." },
+      ],
     },
     {
       title: "Settings — Tile Types",
       icon: "🔲",
-      content: "Add and manage your tile types. Each tile type has a labor rate per sqft and an optional install note shown on the estimator. Tile material cost and waste are entered per job since they change with every order.",
+      content: [
+        { type: "p", text: "Add and manage the tile types you install. Each type sets a labor rate that drives the install cost calculation." },
+        { type: "h", text: "What to Set Here" },
+        { type: "bullets", items: [
+          "Labor rate $/sqft — your install rate for that tile type",
+          "Install note — shown on the estimator as a reminder (e.g. 'Sealer required', 'Leveling clips required')",
+        ]},
+        { type: "h", text: "What Gets Set Per Job" },
+        { type: "p", text: "Tile material cost and waste percentage are always entered on the estimator, not here — they change with every order and supplier." },
+      ],
     },
     {
       title: "Settings — Services",
       icon: "⚙️",
-      content: "Build out your services here. Each service has a name, a labor rate, and a list of materials assigned to it from your Consumables list. Tap the material pill buttons to assign or remove materials. When a service is selected on a job, the estimator pulls in all assigned materials and auto-totals them.",
+      content: [
+        { type: "p", text: "Build out the additional services you offer. Each service has a labor rate and a list of materials it uses." },
+        { type: "h", text: "Setting Up a Service" },
+        { type: "bullets", items: [
+          "Give it a name and a labor rate per sqft",
+          "Tap the material pill buttons to assign consumables from your Consumables & Rates list",
+          "Assigned materials will be pulled into the estimator whenever this service is checked on a job",
+        ]},
+        { type: "h", text: "Per-Job Overrides" },
+        { type: "p", text: "When a service is active on an estimate, you can override any material cost or the labor rate for that job only. Your saved defaults are never changed." },
+      ],
     },
     {
       title: "Misc Supplies & Default Markup",
       icon: "🔩",
-      content: "Misc Supplies is a percentage of your labor cost added automatically to cover blades, spacers, buckets, and other small items. Default Markup sets the starting markup percentage on every new estimate — you can always adjust it per job.",
+      content: [
+        { type: "h", text: "Misc Supplies %" },
+        { type: "p", text: "A percentage of your total labor cost added automatically to every estimate. Covers blades, spacers, mixing paddles, buckets, and other small items that are hard to track individually." },
+        { type: "formula", text: "Misc Supplies Cost = Total Labor Cost × (Misc % ÷ 100)" },
+        { type: "p", text: "3% is a reasonable starting point for most jobs. Increase it for complex installs with more cutting." },
+        { type: "h", text: "Default Markup %" },
+        { type: "p", text: "Pre-fills the markup slider on every new estimate. Set this to your typical rate so you don't have to adjust it every time. You can always change it per job." },
+      ],
     },
     {
       title: "Version History",
       icon: "📝",
-      content: "v0.2.4 — Expanded Customer Pricing help with markup formula, markup vs. margin explanation, and slider reference.\nv0.2.3 — Consumables & Rates redesigned to card layout — full material names always visible.\nv0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
+      content: [
+        { type: "bullets", items: [
+          "v0.2.5 — All help sections converted to rich format with headings, bullets, and formula blocks",
+          "v0.2.4 — Expanded Customer Pricing help with markup formula, markup vs. margin explanation, and slider reference",
+          "v0.2.3 — Consumables & Rates redesigned to card layout — full material names always visible",
+          "v0.2.2 — Fixed iOS Safari white border and color-scheme issues",
+          "v0.2.1 — Custom styled checkboxes replacing native browser checkboxes",
+          "v0.2.0 — Added Help tab with full usage guide",
+          "v0.1.0 — Initial release",
+        ]},
+      ],
     },
   ];
 
@@ -818,7 +937,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.4 — Tile Job Estimator · Built for tile contractors
+        v0.2.5 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
