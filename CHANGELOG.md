@@ -1,49 +1,45 @@
 # Changelog
 
+## [0.2.7] - 2026-05-31
+### Fixed
+- Black screen crash when hitting Calculate — `activeServices` prop was undefined (variable is named `enabledServices` in the estimator); corrected prop name passed to `SendEstimateButtons`
+- `sv.laborRate` corrected to `sv.laborPerSqFt` in service cost calculations inside the send component
+- Replaced `useState` hook imports inside `SendEstimateButtons` with `React.useState` to avoid scope issues outside the main component tree
+
 ## [0.2.6] - 2026-05-31
 ### Added
-- **Send Estimate** — Email and Text buttons appear on the results card after calculating
-- Email mode opens your mail app pre-filled with a fully formatted estimate including contractor info, scope of work, itemized cost breakdown, total, and terms
-- Text mode opens your messages app with a concise version including scope of work, total, price per sqft, terms, and contact info
-- Customer name and project description fields in the send panel (pre-fill the estimate header)
-- Terms are editable before sending in email mode
-- Preview pane shows exactly what will be sent before you tap Open
-- **Contractor Info** — New tab at the top of Settings for company name, contact name, phone, email, and website — pre-fills on every estimate
-- **Estimate Numbering** — Auto-increments each time you send; starting number configurable in Settings
-- **Default Terms** — Editable block in Contractor Info settings; pre-fills on every estimate, editable per send
+- Send Estimate via Email or Text from the results card
+- Contractor Info settings tab — company name, contact name, phone, email, website
+- Auto-incrementing estimate numbers; starting number configurable in Settings
+- Default Terms block in Settings; editable per send
+- Customer name and project description fields in send panel
+- Live preview before sending
+- Terms editable in email mode before opening mail app
 
 ## [0.2.5] - 2026-05-31
 ### Changed
-- All help sections converted from plain text to rich content format — headings, bullet lists, and formula blocks now render properly throughout the entire Help tab
+- All help sections converted to rich content format — headings, bullets, formula blocks
 
 ## [0.2.4] - 2026-05-31
 ### Added
-- Customer Pricing help section fully expanded with markup formula, markup vs. margin explanation, slider reference guide, and manual price mode description
-- Help section now supports rich content rendering — headings, bullet lists, and formula blocks within accordion items
+- Customer Pricing help expanded with formula, markup vs. margin, slider reference, manual price mode
 
 ## [0.2.3] - 2026-05-31
 ### Fixed
-- Consumables & Rates redesigned from cramped inline grid to card-per-row layout — material names now display in full regardless of length
+- Consumables & Rates card layout — full material names always visible
 
 ## [0.2.2] - 2026-05-31
 ### Fixed
-- Added color-scheme dark meta tag — fixes iOS Safari white border issue
-- Added theme-color meta tag for iOS browser chrome
-- Suppressed iOS tap highlight flash
+- iOS Safari white border and color-scheme issues
 
 ## [0.2.1] - 2026-05-31
 ### Fixed
-- Custom styled checkboxes replacing native browser checkboxes
+- Custom styled checkboxes
 
 ## [0.2.0] - 2026-05-30
 ### Added
-- Help tab with full accordion-style usage guide
+- Help tab with accordion usage guide
 
 ## [0.1.0] - 2026-05-30
 ### Added
 - Initial build of Tile Job Estimator
-- Estimator: square footage, tile type, tile cost & waste
-- Additional services with material-level cost breakdown
-- Customer pricing with % markup and manual price modes
-- Settings: Consumables & Rates, Tile Types, Services
-- Per-job cost overrides, true cost breakdown, customer quote
