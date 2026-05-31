@@ -435,7 +435,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.1</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.2.2</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -519,7 +519,7 @@ export default function TileEstimator() {
                   const svCost = getServiceCost(sv);
                   const assignedConsumables = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
                   return (
-                    <div key={sv.id} style={{ background: isOn ? "#1a1710" : "#141210", border: `1px solid ${isOn ? "#c19748" : "#222"}`, borderRadius: 8, overflow: "hidden", transition: "all 0.15s" }}>
+                    <div key={sv.id} style={{ background: isOn ? "#1a1710" : "#141210", border: `1px solid ${isOn ? "#c19748" : "#2a2218"}`, borderRadius: 8, overflow: "hidden", transition: "all 0.15s" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer" }} onClick={() => toggleService(sv.id)}>
                         <Checkbox checked={isOn} onChange={() => toggleService(sv.id)} onClick={e => e.stopPropagation()} />
                         <div style={{ flex: 1 }}>
@@ -767,7 +767,7 @@ function HelpPage() {
     {
       title: "Version History",
       icon: "📝",
-      content: "v0.2.1 — Fixed checkbox appearance in Additional Services; custom dark-themed checkboxes replace browser defaults.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release: estimator, services, settings, cost breakdown, and customer quote.",
+      content: "v0.2.2 — Fixed iOS Safari white border issue; dark color-scheme meta tags.\nv0.2.1 — Fixed checkbox appearance; custom dark-themed checkboxes.\nv0.2.0 — Added Help tab with full usage guide.\nv0.1.0 — Initial release.",
     },
   ];
 
@@ -788,7 +788,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.2.1 — Tile Job Estimator · Built for tile contractors
+        v0.2.2 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );

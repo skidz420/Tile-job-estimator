@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-05-31
+### Fixed
+- Added `color-scheme: dark` meta tag and body styles to index.html — tells iOS Safari this is a dark app, preventing it from injecting light-mode backgrounds or rendering borders in unexpected colors
+- Added `theme-color` meta tag so the iOS browser chrome matches the app background
+- Darkened service card border from `#222` to `#2a2218` so it reads as a subtle dark-brown separator rather than ambiguous gray
+- Suppressed iOS tap highlight flash with `-webkit-tap-highlight-color: transparent`
+
 ## [0.2.1] - 2026-05-31
 ### Fixed
 - Replaced native browser checkboxes in Additional Services with custom styled checkboxes — eliminates white border appearance on all browsers and matches the dark gold theme
