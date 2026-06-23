@@ -599,17 +599,22 @@ export default function TileEstimator() {
     };
   });
   const [savedMsg, setSavedMsg] = useState(false);
+  const [unsavedWarning, setUnsavedWarning] = useState(false);
 
   const [sqft, setSqft]                     = useState("");
   const [selectedTileId, setSelectedTileId] = useState(null);
   const [tilePriceSqFt, setTilePriceSqFt]   = useState("");
   const [wastePercent, setWastePercent]     = useState("10");
+  const [jobNotes, setJobNotes]             = useState("");
   // serviceState: { [serviceId]: { enabled, overrides: { [consumableId]: costOverride } } }
   const [serviceState, setServiceState]     = useState({});
   const [markupMode, setMarkupMode]         = useState("percent");
   const [markupPercent, setMarkupPercent]   = useState(40);
   const [manualPrice, setManualPrice]       = useState("");
   const [showBreakdown, setShowBreakdown]   = useState(false);
+  const [estimateHistory, setEstimateHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("tje_estimates") || "[]"); } catch (e) { return []; }
+  });
   const resultRef = useRef(null);
 
   function handleSaveSettings(s) {
@@ -618,7 +623,24 @@ export default function TileEstimator() {
     setMarkupPercent(nv(s.defaultMarkup, 40));
     if (selectedTileId && !s.tiles.find(t => t.id === selectedTileId)) setSelectedTileId(null);
     setSavedMsg(true);
+    setUnsavedWarning(false);
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
+  }
+
+  function saveEstimateToHistory(estNum, customerName, projectDesc, totalPrice) {
+    const record = {
+      id: uid(),
+      date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
+      estNum,
+      customerName,
+      projectDesc,
+      totalPrice,
+      sqft: area,
+      tileName: tile?.name || "",
+    };
+    const next = [record, ...estimateHistory].slice(0, 50);
+    setEstimateHistory(next);
+    try { localStorage.setItem("tje_estimates", JSON.stringify(next)); } catch (e) {}
   }
 
   function handleExport(s) {
@@ -715,13 +737,22 @@ export default function TileEstimator() {
     return ov !== undefined ? ov : String(defaultVal);
   }
 
+  const [calcNudge, setCalcNudge] = useState(false);
+
   function handleCalculate() {
+    if (!canCalculate) {
+      setCalcNudge(true);
+      setTimeout(() => setCalcNudge(false), 3000);
+      return;
+    }
+    // Haptic feedback on iOS
+    if (navigator.vibrate) navigator.vibrate(10);
     setShowBreakdown(true);
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
   function resetEstimate() {
     setSqft(""); setSelectedTileId(null); setTilePriceSqFt(""); setWastePercent("10");
-    setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
+    setJobNotes(""); setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -735,14 +766,17 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.0.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
           </h1>
           <div style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center" }}>
-            {[["estimate","Estimator"],["settings","⚙ Settings"],["help","? Help"]].map(([key, label]) => (
-              <button key={key} onClick={() => setPage(key)} style={{
+            {[["estimate","Estimator"],["settings","⚙ Settings"],["history","📋 History"],["help","? Help"]].map(([key, label]) => (
+              <button key={key} onClick={() => {
+                if (key !== "settings" && page === "settings") setUnsavedWarning(true);
+                setPage(key);
+              }} style={{
                 padding: "10px 22px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
                 fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", background: "transparent",
                 color: page === key ? "#c19748" : "#5a4f38",
@@ -752,10 +786,56 @@ export default function TileEstimator() {
             ))}
             {savedMsg && <div style={{ marginLeft: "auto", fontSize: 12, color: "#6dc47a", fontFamily: "sans-serif", paddingRight: 4 }}>✓ Settings saved</div>}
           </div>
+          {unsavedWarning && page !== "settings" && (
+            <div style={{ background: "#1e1408", border: "1px solid #c19748", borderRadius: 6, padding: "8px 14px", marginTop: 8, marginBottom: 4, display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
+              <span style={{ fontSize: 12, color: "#c19748", flex: 1 }}>⚠ You left Settings without saving — changes were not applied.</span>
+              <button onClick={() => { setPage("settings"); setUnsavedWarning(false); }} style={{ background: "none", border: "1px solid #c19748", borderRadius: 4, color: "#c19748", fontSize: 11, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>Go back</button>
+              <button onClick={() => setUnsavedWarning(false)} style={{ background: "none", border: "none", color: "#5a4f38", fontSize: 16, cursor: "pointer", padding: 0 }}>✕</button>
+            </div>
+          )}
         </div>
       </div>
 
       {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} onExport={handleExport} onImport={handleImport} />
+      : page === "history"  ? (
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+            <div style={{ fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif" }}>Last {estimateHistory.length} estimate{estimateHistory.length !== 1 ? "s" : ""} sent</div>
+            {estimateHistory.length > 0 && (
+              <button onClick={() => {
+                if (window.confirm("Clear all estimate history? This cannot be undone.")) {
+                  setEstimateHistory([]);
+                  try { localStorage.removeItem("tje_estimates"); } catch (e) {}
+                }
+              }} style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
+                Clear History
+              </button>
+            )}
+          </div>
+          {estimateHistory.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+              <div style={{ fontSize: 14 }}>No estimates sent yet.</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>Estimates appear here after you send them to a customer.</div>
+            </div>
+          ) : estimateHistory.map(e => (
+            <div key={e.id} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700 }}>#{e.estNum}</span>
+                  <span style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{e.customerName || "No customer name"}</span>
+                </div>
+                <span style={{ fontSize: 18, color: "#e8c870", fontFamily: "sans-serif" }}>{fmt(e.totalPrice)}</span>
+              </div>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {e.projectDesc && <span style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc}</span>}
+                <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{e.tileName} · {e.sqft} sqft</span>
+                <span style={{ fontSize: 11, color: "#3a3020", fontFamily: "sans-serif", marginLeft: "auto" }}>{e.date}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )
       : page === "help"     ? <HelpPage />
       : (
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
@@ -888,8 +968,20 @@ export default function TileEstimator() {
             )}
           </Section>
 
-          {/* 04 */}
-          <Section label="04" title="Customer Pricing">
+          {/* 04 — Job Notes */}
+          <Section label="04" title="Job Notes">
+            <textarea
+              placeholder="Scope details, customer requests, site conditions, special instructions…"
+              value={jobNotes}
+              onChange={e => setJobNotes(e.target.value)}
+              rows={3}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.7, fontSize: 13, fontFamily: "sans-serif" }}
+            />
+            <div style={{ fontSize: 11, color: "#4a4030", marginTop: 6, fontFamily: "sans-serif" }}>Included on the estimate when you send it to the customer.</div>
+          </Section>
+
+          {/* 05 */}
+          <Section label="05" title="Customer Pricing">
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {[["percent","% Markup"],["manual","Set Manual Price"]].map(([mode, label]) => (
                 <button key={mode} onClick={() => setMarkupMode(mode)} style={{
@@ -922,10 +1014,15 @@ export default function TileEstimator() {
             )}
           </Section>
 
-          <button onClick={handleCalculate} disabled={!canCalculate} style={{
+          {calcNudge && (
+            <div style={{ background: "#1e1408", border: "1px solid #c19748", borderRadius: 6, padding: "10px 14px", marginBottom: 10, fontFamily: "sans-serif", fontSize: 13, color: "#c19748" }}>
+              {!area && !tile ? "⚠ Enter square footage and select a tile type to calculate." : !area ? "⚠ Enter the square footage to calculate." : "⚠ Select a tile type to calculate."}
+            </div>
+          )}
+          <button onClick={handleCalculate} style={{
             width: "100%", padding: "18px", marginTop: 8,
             background: canCalculate ? "linear-gradient(135deg,#c19748,#a07830)" : "#1c1812",
-            border: "none", borderRadius: 8, cursor: canCalculate ? "pointer" : "not-allowed",
+            border: "none", borderRadius: 8, cursor: "pointer",
             color: canCalculate ? "#0f0f0f" : "#3a3020",
             fontSize: 16, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", fontFamily: "sans-serif",
             transition: "all 0.2s", boxShadow: canCalculate ? "0 4px 24px rgba(193,151,72,0.3)" : "none",
@@ -1012,11 +1109,18 @@ export default function TileEstimator() {
                 margin={margin}
                 markupMode={markupMode}
                 markupPercent={markupPercent}
-                onEstimateSent={() => setSettings(p => {
-                  const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
-                  try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
-                  return next;
-                })}
+                jobNotes={jobNotes}
+                onEstimateSent={(customerName, projectDesc) => {
+                  setSettings(p => {
+                    const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
+                    try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
+                    return next;
+                  });
+                  saveEstimateToHistory(
+                    String(settings.estimateNumber || 1).padStart(4, "0"),
+                    customerName, projectDesc, customerPrice
+                  );
+                }}
               />
               <button onClick={resetEstimate} style={{
                 width: "100%", padding: "14px", background: "transparent",
@@ -1035,14 +1139,16 @@ export default function TileEstimator() {
 // ─── Send Estimate ───────────────────────────────────────────
 function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqFt,
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
-  markupMode, markupPercent, onEstimateSent }) {
+  markupMode, markupPercent, jobNotes, onEstimateSent }) {
 
   const [showPreview, setShowPreview]   = useState(false);
   const [sendMode, setSendMode]         = useState(null);
+  const [estimateStyle, setEstimateStyle] = useState("itemized"); // "itemized" | "basic"
   const [terms, setTerms]               = useState(settings.defaultTerms || "");
   const [customerName, setCustomerName] = useState("");
   const [projectDesc, setProjectDesc]   = useState("");
   const [sent, setSent]                 = useState(false);
+  const [sending, setSending]           = useState(false);
 
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const c       = settings.contractor || {};
@@ -1188,6 +1294,14 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       terms.trim().split("\n").forEach(t => L.push("  " + t));
     }
 
+    // ── Job Notes ──
+    if (jobNotes && jobNotes.trim()) {
+      L.push("");
+      L.push("JOB NOTES");
+      L.push(D);
+      jobNotes.trim().split("\n").forEach(t => L.push("  " + t));
+    }
+
     // ── Sign-off ──
     L.push("");
     L.push(D);
@@ -1238,18 +1352,199 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       L.push("TERMS");
       terms.trim().split("\n").forEach(t => L.push(t));
     }
+    if (jobNotes && jobNotes.trim()) {
+      L.push("");
+      L.push("NOTES");
+      jobNotes.trim().split("\n").forEach(t => L.push(t));
+    }
     if (c.phone) { L.push(""); L.push("Questions? " + c.phone); }
     return L.join("\n");
   }
+  function buildBasicEmailBody() {
+    const D = "────────────────────────────────";
+    const allCons = settings.consumables || [];
+    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+    const mp = cost => fmt(cost * ratio);
+    const col = (label, value) => {
+      const dots = ".".repeat(Math.max(2, 46 - label.length - String(value).length));
+      return label + " " + dots + " " + value;
+    };
+    const L = [];
+
+    // Header
+    if (c.companyName) L.push(c.companyName);
+    if (c.contactName) L.push(c.contactName);
+    if (c.phone)       L.push(c.phone);
+    if (c.email)       L.push(c.email);
+    if (c.website)     L.push(c.website);
+    L.push(""); L.push(D);
+    L.push("  TILE INSTALLATION ESTIMATE");
+    L.push(D);
+    L.push("  Estimate #:   " + estNum);
+    L.push("  Date:         " + today);
+    if (customerName) L.push("  Prepared for: " + customerName);
+    if (projectDesc)  L.push("  Project:      " + projectDesc);
+    L.push(D);
+
+    // Job overview
+    L.push("");
+    L.push("JOB OVERVIEW");
+    L.push(D);
+    L.push("  Install Area:  " + area + " sqft");
+    if (tile) L.push("  Tile Type:     " + tile.name);
+    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
+    if (!tileSupplied) L.push("  Tile to Order: " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
+    if (svList.length > 0) L.push("  Services:      " + svList.map(sv => sv.name).join(", "));
+    L.push("");
+
+    // Summary breakdown
+    L.push("PRICE SUMMARY");
+    L.push(D);
+
+    // Materials total
+    const thinsetC = allCons.find(x => x.id === "thinset");
+    const groutC   = allCons.find(x => x.id === "grout");
+    const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
+    const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
+    const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
+    const svMatCost = svList.reduce((sum, sv) => {
+      const st = serviceState[sv.id] || {};
+      return sum + (sv.consumableIds || []).reduce((s2, cId) => {
+        const cons = allCons.find(x => x.id === cId);
+        if (!cons) return s2;
+        const ovVal = st.overrides?.[cId];
+        const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
+          cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
+        const lineCost = cons.priceType === "bag"
+          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
+          : cons.priceType === "sqft" ? area * effPrice : effPrice;
+        return s2 + lineCost;
+      }, 0);
+    }, 0);
+    const miscCost = trueCost - (
+      tileMat + (tile ? area * (parseFloat(tile.labor) || 0) : 0) + thinMat + groutMat +
+      svList.reduce((s, sv) => s + getServiceTotal(sv), 0)
+    );
+    const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
+    const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
+    const svLaborCost = svList.reduce((sum, sv) => {
+      const st = serviceState[sv.id] || {};
+      return sum + area * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
+    }, 0);
+    const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
+
+    if (tileSupplied) {
+      L.push("  Tile Material ...................... Customer supplied");
+    } else {
+      L.push(col("  Materials", mp(totalMatCost)));
+    }
+    L.push(col("  Labor", mp(totalLaborCost)));
+    if (svList.length > 0) L.push(col("  Additional Services", mp(totalServicesCost)));
+
+    L.push("");
+    L.push(D);
+    L.push(col("TOTAL", fmt(customerPrice)));
+    L.push(col("Price per sqft", fmt(customerPrice / (area || 1))));
+    L.push(D);
+
+    if (terms.trim()) {
+      L.push(""); L.push("TERMS & CONDITIONS"); L.push(D);
+      terms.trim().split("\n").forEach(t => L.push("  " + t));
+    }
+    if (jobNotes && jobNotes.trim()) {
+      L.push(""); L.push("JOB NOTES"); L.push(D);
+      jobNotes.trim().split("\n").forEach(t => L.push("  " + t));
+    }
+    L.push(""); L.push(D);
+    L.push("Thank you for the opportunity to quote this project.");
+    L.push("Please don't hesitate to reach out with any questions.");
+    if (c.contactName) { L.push(""); L.push(c.contactName); }
+    if (c.companyName) L.push(c.companyName);
+    if (c.phone)       L.push(c.phone);
+    if (c.email)       L.push(c.email);
+    return L.join("\n");
+  }
+
+  function buildBasicSMSBody() {
+    const D = "--------------------------------";
+    const allCons = settings.consumables || [];
+    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+    const mp = cost => fmt(cost * ratio);
+    const L = [];
+
+    if (c.companyName) L.push(c.companyName);
+    L.push("Estimate #" + estNum + " | " + today);
+    if (customerName) L.push("For: " + customerName);
+    if (projectDesc)  L.push(projectDesc);
+    L.push(D);
+    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
+    if (svList.length > 0) L.push("Services: " + svList.map(sv => sv.name).join(", "));
+    L.push("");
+
+    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
+    const thinsetC = allCons.find(x => x.id === "thinset");
+    const groutC   = allCons.find(x => x.id === "grout");
+    const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
+    const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
+    const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
+    const svMatCost = svList.reduce((sum, sv) => {
+      const st = serviceState[sv.id] || {};
+      return sum + (sv.consumableIds || []).reduce((s2, cId) => {
+        const cons = allCons.find(x => x.id === cId);
+        if (!cons) return s2;
+        const ovVal = st.overrides?.[cId];
+        const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
+          cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
+        return s2 + (cons.priceType === "bag"
+          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
+          : cons.priceType === "sqft" ? area * effPrice : effPrice);
+      }, 0);
+    }, 0);
+    const miscCost = trueCost - (
+      tileMat + (tile ? area * (parseFloat(tile.labor) || 0) : 0) + thinMat + groutMat +
+      svList.reduce((s, sv) => s + getServiceTotal(sv), 0)
+    );
+    const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
+    const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
+    const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
+
+    L.push("PRICE SUMMARY");
+    if (tileSupplied) {
+      L.push("  Tile ................. Customer supplied");
+    } else {
+      L.push("  Materials ............ " + mp(totalMatCost));
+    }
+    L.push("  Labor ................ " + mp(totalLaborCost));
+    if (svList.length > 0) L.push("  Services ............. " + mp(totalServicesCost));
+    L.push(D);
+    L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
+
+    if (terms.trim()) {
+      L.push(""); L.push("TERMS");
+      terms.trim().split("\n").forEach(t => L.push(t));
+    }
+    if (jobNotes && jobNotes.trim()) {
+      L.push(""); L.push("NOTES");
+      jobNotes.trim().split("\n").forEach(t => L.push(t));
+    }
+    if (c.phone) { L.push(""); L.push("Questions? " + c.phone); }
+    return L.join("\n");
+  }
+
   function handleSend() {
-    const body    = sendMode === "email" ? buildEmailBody() : buildSMSBody();
+    setSending(true);
+    if (navigator.vibrate) navigator.vibrate(10);
+    const body = estimateStyle === "basic"
+      ? (sendMode === "email" ? buildBasicEmailBody() : buildBasicSMSBody())
+      : (sendMode === "email" ? buildEmailBody()      : buildSMSBody());
     const subject = "Tile Installation Estimate #" + estNum + (customerName ? " — " + customerName : "");
     if (sendMode === "email") {
       window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
     } else {
       window.open("sms:?&body=" + encodeURIComponent(body));
     }
-    onEstimateSent();
+    onEstimateSent(customerName, projectDesc);
+    setSending(false);
     setSent(true);
     setTimeout(() => setSent(false), 3000);
   }
@@ -1269,7 +1564,9 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     );
   }
 
-  const preview = sendMode === "email" ? buildEmailBody() : buildSMSBody();
+  const preview = estimateStyle === "basic"
+    ? (sendMode === "email" ? buildBasicEmailBody() : buildBasicSMSBody())
+    : (sendMode === "email" ? buildEmailBody()      : buildSMSBody());
 
   return (
     <div style={{ background: "#13110d", border: "1px solid #3a2e1a", borderRadius: 10, padding: "20px", marginBottom: 12 }}>
@@ -1286,6 +1583,24 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
             padding: "5px 10px", background: "transparent", border: "1px solid #3a2e1a",
             borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 11, fontFamily: "sans-serif",
           }}>✕ Cancel</button>
+        </div>
+      </div>
+
+      {/* Itemized / Basic toggle */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Estimate Style</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[["itemized", "Itemized", "Every line item broken out"], ["basic", "Basic", "Materials · Labor · Services"]].map(([val, label, desc]) => (
+            <button key={val} onClick={() => setEstimateStyle(val)} style={{
+              flex: 1, padding: "10px 12px", borderRadius: 6, cursor: "pointer", textAlign: "left",
+              border: `1px solid ${estimateStyle === val ? "#c19748" : "#2e2518"}`,
+              background: estimateStyle === val ? "#1e1a10" : "#13110d",
+              transition: "all 0.15s",
+            }}>
+              <div style={{ fontSize: 12, color: estimateStyle === val ? "#c19748" : "#8a7d65", fontFamily: "sans-serif", fontWeight: 700 }}>{label}</div>
+              <div style={{ fontSize: 10, color: estimateStyle === val ? "#8a7d65" : "#3a3020", fontFamily: "sans-serif", marginTop: 2 }}>{desc}</div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1323,13 +1638,14 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         Estimate #{estNum} · Sending will increment to #{nextNum}
       </div>
 
-      <button onClick={handleSend} style={{
-        width: "100%", padding: "14px", background: "#1e1608",
-        border: "1px solid #c19748", borderRadius: 8, cursor: "pointer",
-        color: "#c19748", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1,
+      <button onClick={handleSend} disabled={sending} style={{
+        width: "100%", padding: "14px", background: sent ? "#162010" : "#1e1608",
+        border: `1px solid ${sent ? "#6dc47a" : "#c19748"}`, borderRadius: 8, cursor: sending ? "wait" : "pointer",
+        color: sent ? "#6dc47a" : "#c19748", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1,
+        transition: "all 0.2s",
       }}>
-        {sent
-          ? "✓ Opened — check your " + (sendMode === "email" ? "mail app" : "messages app")
+        {sending ? "Opening…"
+          : sent ? "✓ Opened — check your " + (sendMode === "email" ? "mail app" : "messages app")
           : (sendMode === "email" ? "Open in Mail App →" : "Open in Messages App →")}
       </button>
     </div>
@@ -1517,6 +1833,8 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
+          "v1.0.1 — Install banner guides Android and iOS users through adding app to home screen",
           "v1.0.0 — Progressive Web App: install to home screen, works fully offline; custom TJE icon; service worker caches all assets",
           "v0.3.3 — Material categories added to consumables; Services now use a grouped checklist with search instead of bubbles",
           "v0.3.2 — Added Export & Import backup buttons to Settings — save all settings to a JSON file and restore from any previous backup",
@@ -1555,7 +1873,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.0.0 — Tile Job Estimator · Built for tile contractors
+        v1.1.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
