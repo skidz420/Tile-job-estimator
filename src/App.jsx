@@ -735,7 +735,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.3</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.0.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -1517,6 +1517,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.0.0 — Progressive Web App: install to home screen, works fully offline; custom TJE icon; service worker caches all assets",
           "v0.3.3 — Material categories added to consumables; Services now use a grouped checklist with search instead of bubbles",
           "v0.3.2 — Added Export & Import backup buttons to Settings — save all settings to a JSON file and restore from any previous backup",
           "v0.3.1 — Settings now persist across sessions — contractor info, tile types, services, and estimate number all saved to device storage",
@@ -1554,7 +1555,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.3.3 — Tile Job Estimator · Built for tile contractors
+        v1.0.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
