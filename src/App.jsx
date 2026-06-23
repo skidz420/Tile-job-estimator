@@ -36,19 +36,31 @@ const SEED_TILES = [
 
 // Master consumables list — all materials live here
 // priceType: "bag" (bag price + coverage), "sqft" ($/sqft), "flat" ($/unit)
+const CONSUMABLE_CATEGORIES = [
+  "Adhesives",
+  "Grout & Finishing",
+  "Substrate & Backer",
+  "Waterproofing",
+  "Leveling System",
+  "Sealers",
+  "Fasteners & Hardware",
+  "Substrate Prep",
+  "Other",
+];
+
 const SEED_CONSUMABLES = [
-  { id: "thinset",    name: "Thinset / Mortar",        priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitCost: "",  note: "50 lb bag" },
-  { id: "grout",      name: "Grout",                   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitCost: "",  note: "Varies by joint width" },
-  { id: "backer",     name: "Cement Backer Board",     priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.65, note: "" },
-  { id: "membrane",   name: "Waterproof Membrane",     priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.90, note: "" },
-  { id: "memtape",    name: "Membrane Seam Tape",      priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 18,   note: "Per roll" },
-  { id: "levelclips", name: "Leveling Clips",          priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.45, note: "" },
-  { id: "wedges",     name: "Leveling Wedges",         priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 22,   note: "Per bag" },
-  { id: "sealer",     name: "Stone / Grout Sealer",    priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 35,   note: "Per bottle" },
-  { id: "primer",     name: "Subfloor Primer",         priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 35,   note: "Per bucket" },
-  { id: "selfLevel",  name: "Self-Leveling Compound",  priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.60, note: "" },
-  { id: "backscrews", name: "Backer Board Screws",     priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 8,    note: "Per box" },
-  { id: "meshtape",   name: "Fiberglass Mesh Tape",    priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 12,   note: "Per roll" },
+  { id: "thinset",    name: "Thinset / Mortar",        category: "Adhesives",           priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitCost: "",  note: "50 lb bag" },
+  { id: "grout",      name: "Grout",                   category: "Grout & Finishing",   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitCost: "",  note: "Varies by joint width" },
+  { id: "backer",     name: "Cement Backer Board",     category: "Substrate & Backer",  priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.65, note: "" },
+  { id: "membrane",   name: "Waterproof Membrane",     category: "Waterproofing",       priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.90, note: "" },
+  { id: "memtape",    name: "Membrane Seam Tape",      category: "Waterproofing",       priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 18,   note: "Per roll" },
+  { id: "levelclips", name: "Leveling Clips",          category: "Leveling System",     priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.45, note: "" },
+  { id: "wedges",     name: "Leveling Wedges",         category: "Leveling System",     priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 22,   note: "Per bag" },
+  { id: "sealer",     name: "Stone / Grout Sealer",    category: "Sealers",             priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 35,   note: "Per bottle" },
+  { id: "primer",     name: "Subfloor Primer",         category: "Substrate Prep",      priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 35,   note: "Per bucket" },
+  { id: "selfLevel",  name: "Self-Leveling Compound",  category: "Substrate Prep",      priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.60, note: "" },
+  { id: "backscrews", name: "Backer Board Screws",     category: "Fasteners & Hardware",priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 8,    note: "Per box" },
+  { id: "meshtape",   name: "Fiberglass Mesh Tape",    category: "Fasteners & Hardware",priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 12,   note: "Per roll" },
 ];
 
 // Services: each has a name, labor rate ($/sqft), and list of consumable IDs assigned to it
@@ -70,7 +82,7 @@ function fmt(n) { return (isNaN(n) || n == null) ? "$—" : n.toLocaleString("en
 function nv(v, fb = 0) { return parseFloat(v) || fb; }
 
 function newTile()        { return { id: uid(), name: "", icon: "⬜", labor: "", notes: "" }; }
-function newConsumable()  { return { id: uid(), name: "", priceType: "sqft", bagPrice: "", bagCoverage: "", unitCost: "", note: "" }; }
+function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitCost: "", note: "" }; }
 function newService()     { return { id: uid(), name: "", laborPerSqFt: "", consumableIds: [] }; }
 
 // Cost of a consumable for a given sqft area
@@ -83,6 +95,119 @@ function consumableCost(c, area) {
   if (c.priceType === "sqft") return area * nv(c.unitCost);
   if (c.priceType === "flat") return nv(c.unitCost);
   return 0;
+}
+
+// ─── Material Picker (grouped checklist + search) ────────────────────────────
+function MaterialPicker({ consumables, assignedIds, onToggle }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? consumables.filter(c => (c.name || "").toLowerCase().includes(q))
+    : consumables;
+
+  // Group by category
+  const groups = {};
+  filtered.forEach(c => {
+    const cat = c.category || "Other";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(c);
+  });
+  const groupKeys = Object.keys(groups).sort();
+
+  const assignedCount = assignedIds.length;
+
+  return (
+    <div>
+      {/* Collapsed header */}
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        width: "100%", padding: "9px 12px",
+        background: "#13110d", border: "1px solid #2e2518", borderRadius: open ? "6px 6px 0 0" : 6,
+        cursor: "pointer", fontFamily: "sans-serif",
+      }}>
+        <span style={{ fontSize: 12, color: "#8a7d65", textTransform: "uppercase", letterSpacing: 1 }}>
+          Assigned Materials
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {assignedCount > 0 && (
+            <span style={{ fontSize: 12, color: "#c19748", fontFamily: "sans-serif", fontWeight: 600 }}>
+              {assignedCount} selected
+            </span>
+          )}
+          <span style={{ color: "#5a4f38", fontSize: 14 }}>{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ border: "1px solid #2e2518", borderTop: "none", borderRadius: "0 0 6px 6px", background: "#0f0d0a" }}>
+          {/* Search bar */}
+          <div style={{ padding: "10px 12px", borderBottom: "1px solid #1e1a12" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#1a1610", border: "1px solid #2e2518", borderRadius: 5, padding: "6px 10px" }}>
+              <span style={{ color: "#4a4030", fontSize: 13 }}>🔍</span>
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search materials…"
+                style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }}
+              />
+              {query && (
+                <button onClick={() => setQuery("")} style={{ background: "none", border: "none", color: "#5a4f38", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>✕</button>
+              )}
+            </div>
+          </div>
+
+          {/* Material list */}
+          {consumables.length === 0 ? (
+            <div style={{ padding: "14px 16px", fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>
+              Add materials in Consumables & Rates first
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "14px 16px", fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>
+              No materials match "{query}"
+            </div>
+          ) : (
+            <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
+              {groupKeys.map(cat => (
+                <div key={cat}>
+                  {/* Category header — hidden when searching */}
+                  {!q && (
+                    <div style={{ padding: "6px 14px 4px", fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>
+                      {cat}
+                    </div>
+                  )}
+                  {groups[cat].map(c => {
+                    const assigned = assignedIds.includes(c.id);
+                    return (
+                      <div key={c.id} onClick={() => onToggle(c.id)} style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        padding: "9px 14px", cursor: "pointer",
+                        background: assigned ? "rgba(193,151,72,0.07)" : "transparent",
+                        transition: "background 0.1s",
+                      }}>
+                        <div style={{
+                          width: 16, height: 16, flexShrink: 0, borderRadius: 3,
+                          border: assigned ? "2px solid #c19748" : "2px solid #3a3020",
+                          background: assigned ? "#c19748" : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {assigned && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="#0f0f0f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </div>
+                        <span style={{ fontSize: 13, color: assigned ? "#d4c49a" : "#5a4f38", fontFamily: "sans-serif", flex: 1 }}>
+                          {c.name || "Unnamed"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
@@ -272,6 +397,14 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
                     style={{ ...iStyle, fontSize: 11, color: "#8a7d65" }} />
                 </div>
               )}
+              {/* Row 4: Category */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Category</div>
+                <select value={c.category || "Other"} onChange={e => updateC(c.id, "category", e.target.value)}
+                  style={{ ...iStyle, cursor: "pointer", fontSize: 12 }}>
+                  {CONSUMABLE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
             </div>
           ))}
           <button onClick={addC} style={addBtnStyle}>+ Add Material</button>
@@ -336,31 +469,11 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
               </div>
               {/* Consumables assignment */}
               <div style={{ padding: "12px 14px" }}>
-                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
-                  Assigned Materials
-                </div>
-                {s.consumables.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>
-                    Add materials in Consumables & Rates first
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {s.consumables.map(c => {
-                      const assigned = sv.consumableIds.includes(c.id);
-                      return (
-                        <button key={c.id} onClick={() => toggleConsumableOnService(sv.id, c.id)} style={{
-                          padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "sans-serif", fontSize: 12,
-                          border: `1px solid ${assigned ? "#c19748" : "#2e2518"}`,
-                          background: assigned ? "#c19748" : "#1a1610",
-                          color: assigned ? "#0f0f0f" : "#8a7d65",
-                          transition: "all 0.15s",
-                        }}>
-                          {assigned ? "✓ " : ""}{c.name || "Unnamed"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <MaterialPicker
+                  consumables={s.consumables}
+                  assignedIds={sv.consumableIds}
+                  onToggle={cId => toggleConsumableOnService(sv.id, cId)}
+                />
               </div>
             </div>
           ))}
@@ -622,7 +735,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.2</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.3</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -1404,6 +1517,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v0.3.3 — Material categories added to consumables; Services now use a grouped checklist with search instead of bubbles",
           "v0.3.2 — Added Export & Import backup buttons to Settings — save all settings to a JSON file and restore from any previous backup",
           "v0.3.1 — Settings now persist across sessions — contractor info, tile types, services, and estimate number all saved to device storage",
           "v0.3.0 — Customer-facing estimates: removed true cost and internal rates; all line items show marked-up customer prices only",
@@ -1440,7 +1554,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.3.2 — Tile Job Estimator · Built for tile contractors
+        v0.3.3 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
