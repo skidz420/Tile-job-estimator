@@ -1,27 +1,37 @@
 # Changelog
 
+## [1.1.0] - 2026-06-22
+### Added
+- **Job Notes field** — free-text notes per estimate (scope, site conditions, customer requests); included when estimate is sent
+- **Estimate History** — new History tab logs every sent estimate with date, estimate #, customer, project, tile type, sqft, and total; stored in localStorage; clears on demand
+- **Install Banner** — top-of-screen prompt on Android and iOS guides users through installing the PWA; auto-hides once installed; one-tap install on Android when Chrome prompt is available
+- **Unsaved Settings warning** — leaving Settings without saving now shows a gold warning bar with a "Go back" button
+- **Empty state nudge** — tapping Calculate without sqft or tile type shows a specific, dismissable message instead of silently doing nothing
+- **Scroll to results** — after Calculate, page smoothly scrolls to the results section automatically
+- **Haptic feedback** — subtle vibration on Calculate and Send on supported devices
+- **Send button loading state** — button shows "Opening…" while launching mail/messages app, then confirms with a green "✓ Opened" state
+- **Itemized vs Basic estimate style** — toggle in the send panel lets you choose between a full line-item breakdown or a clean 3-line summary (Materials · Labor · Services)
+
 ## [1.0.0] - 2026-06-22
 ### Added
-- **Progressive Web App (PWA)** — install Tile Job Estimator to your phone's home screen like a native app
-- **Offline support** — full app works with zero network connection; service worker caches all assets on first load
-- **Custom app icon** — dark tile grid with gold accent tiles and TJE nameplate badge, in 192×192 and 512×512
-- **Web manifest** — proper app name, theme color, standalone display mode
-- **iOS home screen support** — apple-touch-icon, status bar style, and apple-mobile-web-app meta tags
+- Progressive Web App — install to home screen, works fully offline
+- Custom TJE icon — dark tile grid with gold accents and nameplate badge
+- Service worker caches all assets on first load
+- Web manifest with standalone display mode
+- iOS apple-touch-icon and status bar meta tags
 
 ## [0.3.3] - 2026-06-22
 ### Added
-- Material categories on each consumable (Adhesives, Grout & Finishing, Waterproofing, etc.)
-- Grouped checklist material picker in Services — replaces flat bubble row
-- Real-time search within material picker; category headers hide during search
+- Material categories on each consumable
+- Grouped checklist material picker in Services with real-time search
 
 ## [0.3.2] - 2026-06-22
 ### Added
-- Export Backup — downloads all settings as a timestamped JSON file
-- Import Backup — restores settings from a previously exported backup
+- Export Backup and Import Backup for settings
 
 ## [0.3.1] - 2026-05-31
 ### Fixed
-- Settings now persist across sessions via localStorage
+- Settings persist across sessions via localStorage
 
 ## [0.3.0] - 2026-05-31
 ### Changed
@@ -29,44 +39,20 @@
 
 ## [0.2.9] - 2026-05-31
 ### Changed
-- Fully itemized estimates with quantities and service material breakdowns
+- Fully itemized estimates
 
 ## [0.2.8] - 2026-05-31
 ### Fixed
-- Black screen on Calculate — React.useState corrected to useState
-
-## [0.2.7] - 2026-05-31
-### Fixed
-- Black screen on Calculate — activeServices prop corrected to enabledServices
+- Black screen on Calculate
 
 ## [0.2.6] - 2026-05-31
 ### Added
-- Send Estimate via Email or Text; Contractor Info; auto-incrementing estimate numbers; Default Terms
-
-## [0.2.5] - 2026-05-31
-### Changed
-- All help sections converted to rich content format
-
-## [0.2.4] - 2026-05-31
-### Added
-- Customer Pricing help with markup formula explanation
-
-## [0.2.3] - 2026-05-31
-### Fixed
-- Consumables & Rates card layout
-
-## [0.2.2] - 2026-05-31
-### Fixed
-- iOS Safari white border and color-scheme issues
-
-## [0.2.1] - 2026-05-31
-### Fixed
-- Custom styled checkboxes
+- Send Estimate via Email or Text; Contractor Info; estimate numbers; Default Terms
 
 ## [0.2.0] - 2026-05-30
 ### Added
-- Help tab with accordion usage guide
+- Help tab
 
 ## [0.1.0] - 2026-05-30
 ### Added
-- Initial build of Tile Job Estimator
+- Initial build
