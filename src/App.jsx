@@ -2374,8 +2374,6 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       </div>
 
-      </div>
-
       {/* Customer Picker */}
       {customers && customers.length > 0 && (
         <div style={{ marginBottom: 10 }}>
