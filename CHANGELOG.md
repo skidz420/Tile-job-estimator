@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.2] - 2026-06-22
+### Added
+- **Export Backup** — downloads all settings (consumables, tile types, services, contractor info, rates, terms) as a timestamped JSON file
+- **Import Backup** — restores settings from any previously exported JSON backup file; merges with defaults so new fields are always present
+- Both buttons live at the bottom of the Settings page under a "Backup & Restore" section
+
 ## [0.3.1] - 2026-05-31
 ### Fixed
 - **Settings not persisting** — all settings were stored in React state only and wiped on every page refresh
