@@ -767,7 +767,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.1</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.2</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -1175,88 +1175,83 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
   }
 
   function buildEmailBody() {
-    const D   = "────────────────────────────────";
     const allCons = settings.consumables || [];
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-
-    // Apply markup ratio to a cost so all lines add up to customerPrice
     const mp = cost => fmt(cost * ratio);
-
-    const col = (label, value, indent) => {
-      const pad  = indent ? "    " : "";
-      const full = pad + label;
-      const dots = ".".repeat(Math.max(2, 46 - full.length - String(value).length));
-      return full + " " + dots + " " + value;
-    };
-
+    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
+    const thinsetC = allCons.find(x => x.id === "thinset");
+    const groutC   = allCons.find(x => x.id === "grout");
+    const firstName = customerName ? customerName.split(" ")[0] : "";
     const L = [];
 
-    // ── Header ──
-    if (c.companyName) L.push(c.companyName);
-    if (c.contactName) L.push(c.contactName);
-    if (c.phone)       L.push(c.phone);
-    if (c.email)       L.push(c.email);
-    if (c.website)     L.push(c.website);
+    // ── Warm opener ──
+    if (c.companyName || c.contactName) {
+      L.push(c.companyName || c.contactName);
+      if (c.companyName && c.contactName) L.push(c.contactName);
+      if (c.phone)   L.push(c.phone);
+      if (c.email)   L.push(c.email);
+      if (c.website) L.push(c.website);
+      L.push("");
+    }
+    L.push(today);
+    L.push("Estimate #" + estNum);
     L.push("");
-    L.push(D);
-    L.push("  TILE INSTALLATION ESTIMATE");
-    L.push(D);
-    L.push("  Estimate #:   " + estNum);
-    L.push("  Date:         " + today);
-    if (customerName) L.push("  Prepared for: " + customerName);
-    if (projectDesc)  L.push("  Project:      " + projectDesc);
-    L.push(D);
-
-    // ── Job Overview ──
+    if (firstName) {
+      L.push("Hi " + firstName + ",");
+    } else {
+      L.push("Hello,");
+    }
     L.push("");
-    L.push("JOB OVERVIEW");
-    L.push(D);
-    L.push("  Install Area:   " + area + " sqft");
-    if (tile) L.push("  Tile Type:      " + tile.name);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    if (!tileSupplied) L.push("  Tile to Order:  " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
-    if (svList.length > 0) L.push("  Services:       " + svList.map(sv => sv.name).join(", "));
+    if (projectDesc) {
+      L.push("Thank you for the opportunity to quote your " + projectDesc + " project. I’ve put together a detailed estimate below and would love to get started!");
+    } else {
+      L.push("Thank you for reaching out! I’ve put together a detailed estimate for your tile installation project and would love to get started.");
+    }
     L.push("");
 
-    // ── Itemized Price Breakdown ──
-    L.push("PRICE BREAKDOWN");
-    L.push(D);
+    // ── Job details ──
+    L.push("PROJECT DETAILS");
+    L.push("─────────────────────────────────────");
+    L.push("  Area:      " + area + " square feet");
+    if (tile) L.push("  Tile Type: " + tile.name);
+    if (!tileSupplied) L.push("  Material:  " + tileWithWaste.toFixed(0) + " sqft to order (includes waste allowance)");
+    if (svList.length > 0) {
+      L.push("  Includes:  " + svList.map(sv => sv.name).join(", "));
+    }
+    if (jobNotes && jobNotes.trim()) {
+      L.push("");
+      L.push("  Notes: " + jobNotes.trim().replace(/\n/g, "  "));
+    }
+    L.push("");
 
-    // Tile material
+    // ── Itemized breakdown ──
+    L.push("WHAT’S INCLUDED");
+    L.push("─────────────────────────────────────");
+
     if (!tileSupplied) {
       const mc = tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-      L.push(col("Tile — " + tile?.name + " (" + tileWithWaste.toFixed(0) + " sqft)", mp(mc)));
+      L.push("  " + tile?.name + " tile (" + tileWithWaste.toFixed(0) + " sqft)   " + mp(mc));
     } else {
-      L.push("  Tile Material ................................. Customer supplied");
+      L.push("  Tile material — customer supplied");
     }
-
-    // Installation
     if (tile) {
-      const lc = area * (parseFloat(tile.labor) || 0);
-      L.push(col("Installation — " + tile.name, mp(lc)));
+      L.push("  " + tile.name + " installation   " + mp(area * (parseFloat(tile.labor) || 0)));
     }
-
-    // Thinset
-    const thinsetC = allCons.find(x => x.id === "thinset");
     if (thinsetC) {
       const bags = area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1);
-      L.push(col("Thinset / Mortar", mp(bags * (parseFloat(thinsetC.bagPrice) || 0))));
+      const cost = bags * (parseFloat(thinsetC.bagPrice) || 0);
+      if (cost > 0) L.push("  Thinset & mortar   " + mp(cost));
     }
-
-    // Grout
-    const groutC = allCons.find(x => x.id === "grout");
     if (groutC) {
       const bags = area / Math.max(1, parseFloat(groutC.bagCoverage) || 1);
-      L.push(col("Grout", mp(bags * (parseFloat(groutC.bagPrice) || 0))));
+      const cost = bags * (parseFloat(groutC.bagPrice) || 0);
+      if (cost > 0) L.push("  Grout   " + mp(cost));
     }
-
-    // Each service — itemized, no rates shown
     svList.forEach(sv => {
       const st = serviceState[sv.id] || {};
       const laborOv = parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0;
       L.push("");
-      L.push(col(sv.name, mp(getServiceTotal(sv))));
-      L.push(col("Labor", mp(area * laborOv), true));
+      L.push("  " + sv.name + "   " + mp(getServiceTotal(sv)));
       (sv.consumableIds || []).forEach(cId => {
         const cons = allCons.find(x => x.id === cId);
         if (!cons) return;
@@ -1266,11 +1261,9 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         const lineCost = cons.priceType === "bag"
           ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
           : cons.priceType === "sqft" ? area * effPrice : effPrice;
-        L.push(col(cons.name, mp(lineCost), true));
+        if (lineCost > 0) L.push("    • " + cons.name);
       });
     });
-
-    // Misc
     const knownCost =
       (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
       (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
@@ -1278,66 +1271,68 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
-    if (misc > 0.01) { L.push(""); L.push(col("Supplies & Materials", mp(misc))); }
+    if (misc > 0.01) L.push("  Supplies & sundries   " + mp(misc));
 
     // ── Total ──
     L.push("");
-    L.push(D);
-    L.push(col("TOTAL", fmt(customerPrice)));
-    L.push(col("Price per sqft", fmt(customerPrice / (area || 1))));
-    L.push(D);
+    L.push("─────────────────────────────────────");
+    L.push("  TOTAL:          " + fmt(customerPrice));
+    L.push("  Price per sqft: " + fmt(customerPrice / (area || 1)));
+    L.push("─────────────────────────────────────");
+    L.push("");
 
     // ── Terms ──
     if (terms.trim()) {
-      L.push("");
-      L.push("TERMS & CONDITIONS");
-      L.push(D);
+      L.push("TERMS");
       terms.trim().split("\n").forEach(t => L.push("  " + t));
-    }
-
-    // ── Job Notes ──
-    if (jobNotes && jobNotes.trim()) {
       L.push("");
-      L.push("JOB NOTES");
-      L.push(D);
-      jobNotes.trim().split("\n").forEach(t => L.push("  " + t));
     }
 
-    // ── Sign-off ──
+    // ── Warm close ──
+    L.push("I’m confident in the quality of my work and stand behind every job I do. If you have any questions or’d like to discuss anything, don’t hesitate to give me a call — I’m happy to walk you through it.");
     L.push("");
-    L.push(D);
-    L.push("Thank you for the opportunity to quote this project.");
-    L.push("Please don't hesitate to reach out with any questions.");
-    if (c.contactName) { L.push(""); L.push(c.contactName); }
+    L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
+    L.push("");
+    if (c.contactName) L.push(c.contactName);
     if (c.companyName) L.push(c.companyName);
     if (c.phone)       L.push(c.phone);
     if (c.email)       L.push(c.email);
     return L.join("\n");
   }
   function buildSMSBody() {
-    const D     = "--------------------------------";
     const allCons = settings.consumables || [];
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-    const mp    = cost => fmt(cost * ratio);
-    const L     = [];
-
-    if (c.companyName) L.push(c.companyName);
-    L.push("Estimate #" + estNum + " | " + today);
-    if (customerName) L.push("For: " + customerName);
-    if (projectDesc)  L.push(projectDesc);
-    L.push(D);
-    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
-    if (svList.length > 0) L.push("Services: " + svList.map(sv => sv.name).join(", "));
-    L.push("");
-    L.push("PRICE BREAKDOWN");
+    const mp = cost => fmt(cost * ratio);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    if (!tileSupplied) L.push("  Tile material ......... " + mp(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
-    if (tile)          L.push("  Installation .......... " + mp(area * (parseFloat(tile.labor) || 0)));
     const thinsetC = allCons.find(x => x.id === "thinset");
     const groutC   = allCons.find(x => x.id === "grout");
-    if (thinsetC) L.push("  Thinset ............... " + mp((area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0)));
-    if (groutC)   L.push("  Grout .................. " + mp((area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0)));
-    svList.forEach(sv => L.push("  " + sv.name + " ........ " + mp(getServiceTotal(sv))));
+    const firstName = customerName ? customerName.split(" ")[0] : "";
+    const L = [];
+
+    if (c.companyName) L.push(c.companyName);
+    L.push("Estimate #" + estNum + " — " + today);
+    L.push("");
+    if (firstName) {
+      L.push("Hi " + firstName + "! " + (projectDesc ? "Here’s your estimate for " + projectDesc + "." : "Here’s your tile installation estimate."));
+    } else {
+      L.push(projectDesc ? "Estimate for " + projectDesc + ":" : "Tile installation estimate:");
+    }
+    L.push("");
+    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
+    if (svList.length > 0) L.push("Includes: " + svList.map(sv => sv.name).join(", "));
+    L.push("");
+
+    if (!tileSupplied) L.push("Tile material        " + mp(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
+    if (tile)          L.push("Installation         " + mp(area * (parseFloat(tile.labor) || 0)));
+    if (thinsetC) {
+      const cost = (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0);
+      if (cost > 0) L.push("Thinset & mortar     " + mp(cost));
+    }
+    if (groutC) {
+      const cost = (area / Math.max(1, parseFloat(groutC.bagCoverage) || 1)) * (parseFloat(groutC.bagPrice) || 0);
+      if (cost > 0) L.push("Grout                " + mp(cost));
+    }
+    svList.forEach(sv => L.push(sv.name + "   " + mp(getServiceTotal(sv))));
     const knownCost =
       (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
       (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
@@ -1345,66 +1340,31 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
-    if (misc > 0.01) L.push("  Supplies & materials ... " + mp(misc));
-    L.push(D);
+    if (misc > 0.01) L.push("Supplies             " + mp(misc));
+    L.push("─────────────────────");
     L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
-    if (terms.trim()) {
-      L.push("");
-      L.push("TERMS");
-      terms.trim().split("\n").forEach(t => L.push(t));
-    }
     if (jobNotes && jobNotes.trim()) {
       L.push("");
-      L.push("NOTES");
-      jobNotes.trim().split("\n").forEach(t => L.push(t));
+      L.push("Note: " + jobNotes.trim().replace(/\n/g, " "));
     }
-    if (c.phone) { L.push(""); L.push("Questions? " + c.phone); }
+    if (terms.trim()) {
+      L.push("");
+      L.push("Terms: " + terms.trim().split("\n")[0] + (terms.trim().split("\n").length > 1 ? " (...)" : ""));
+    }
+    L.push("");
+    L.push("Questions? Give me a call" + (c.phone ? " — " + c.phone : "!"));
+    L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
     return L.join("\n");
   }
   function buildBasicEmailBody() {
-    const D = "────────────────────────────────";
     const allCons = settings.consumables || [];
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
-    const col = (label, value) => {
-      const dots = ".".repeat(Math.max(2, 46 - label.length - String(value).length));
-      return label + " " + dots + " " + value;
-    };
-    const L = [];
-
-    // Header
-    if (c.companyName) L.push(c.companyName);
-    if (c.contactName) L.push(c.contactName);
-    if (c.phone)       L.push(c.phone);
-    if (c.email)       L.push(c.email);
-    if (c.website)     L.push(c.website);
-    L.push(""); L.push(D);
-    L.push("  TILE INSTALLATION ESTIMATE");
-    L.push(D);
-    L.push("  Estimate #:   " + estNum);
-    L.push("  Date:         " + today);
-    if (customerName) L.push("  Prepared for: " + customerName);
-    if (projectDesc)  L.push("  Project:      " + projectDesc);
-    L.push(D);
-
-    // Job overview
-    L.push("");
-    L.push("JOB OVERVIEW");
-    L.push(D);
-    L.push("  Install Area:  " + area + " sqft");
-    if (tile) L.push("  Tile Type:     " + tile.name);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    if (!tileSupplied) L.push("  Tile to Order: " + tileWithWaste.toFixed(0) + " sqft (includes waste)");
-    if (svList.length > 0) L.push("  Services:      " + svList.map(sv => sv.name).join(", "));
-    L.push("");
-
-    // Summary breakdown
-    L.push("PRICE SUMMARY");
-    L.push(D);
-
-    // Materials total
     const thinsetC = allCons.find(x => x.id === "thinset");
     const groutC   = allCons.find(x => x.id === "grout");
+    const firstName = customerName ? customerName.split(" ")[0] : "";
+
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
     const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
     const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
@@ -1428,38 +1388,69 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     );
     const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
     const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
-    const svLaborCost = svList.reduce((sum, sv) => {
-      const st = serviceState[sv.id] || {};
-      return sum + area * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
-    }, 0);
     const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
 
-    if (tileSupplied) {
-      L.push("  Tile Material ...................... Customer supplied");
-    } else {
-      L.push(col("  Materials", mp(totalMatCost)));
-    }
-    L.push(col("  Labor", mp(totalLaborCost)));
-    if (svList.length > 0) L.push(col("  Additional Services", mp(totalServicesCost)));
+    const L = [];
 
+    // Header
+    if (c.companyName || c.contactName) {
+      L.push(c.companyName || c.contactName);
+      if (c.companyName && c.contactName) L.push(c.contactName);
+      if (c.phone)   L.push(c.phone);
+      if (c.email)   L.push(c.email);
+      if (c.website) L.push(c.website);
+      L.push("");
+    }
+    L.push(today);
+    L.push("Estimate #" + estNum);
     L.push("");
-    L.push(D);
-    L.push(col("TOTAL", fmt(customerPrice)));
-    L.push(col("Price per sqft", fmt(customerPrice / (area || 1))));
-    L.push(D);
+
+    // Warm opener
+    L.push(firstName ? "Hi " + firstName + "," : "Hello,");
+    L.push("");
+    if (projectDesc) {
+      L.push("Thank you for the opportunity to quote your " + projectDesc + " project — I’d love to make this happen for you!");
+    } else {
+      L.push("Thank you for reaching out! I’d love to get started on your tile project.");
+    }
+    L.push("");
+
+    // Job snapshot
+    L.push("Here’s a quick overview:");
+    L.push("  " + area + " square feet — " + (tile?.name || "tile") + " installation");
+    if (!tileSupplied) L.push("  " + tileWithWaste.toFixed(0) + " sqft of material to order (waste included)");
+    if (svList.length > 0) L.push("  Additional work: " + svList.map(sv => sv.name).join(", "));
+    if (jobNotes && jobNotes.trim()) L.push("  " + jobNotes.trim().replace(/\n/g, "  "));
+    L.push("");
+
+    // Clean summary
+    L.push("ESTIMATE SUMMARY");
+    L.push("─────────────────────────────────────");
+    if (tileSupplied) {
+      L.push("  Tile material        Customer supplied");
+    } else {
+      L.push("  Materials            " + mp(totalMatCost));
+    }
+    L.push("  Labor                " + mp(totalLaborCost));
+    if (svList.length > 0) L.push("  Additional services  " + mp(totalServicesCost));
+    L.push("─────────────────────────────────────");
+    L.push("  TOTAL                " + fmt(customerPrice));
+    L.push("  Per square foot      " + fmt(customerPrice / (area || 1)));
+    L.push("─────────────────────────────────────");
+    L.push("");
 
     if (terms.trim()) {
-      L.push(""); L.push("TERMS & CONDITIONS"); L.push(D);
+      L.push("TERMS");
       terms.trim().split("\n").forEach(t => L.push("  " + t));
+      L.push("");
     }
-    if (jobNotes && jobNotes.trim()) {
-      L.push(""); L.push("JOB NOTES"); L.push(D);
-      jobNotes.trim().split("\n").forEach(t => L.push("  " + t));
-    }
-    L.push(""); L.push(D);
-    L.push("Thank you for the opportunity to quote this project.");
-    L.push("Please don't hesitate to reach out with any questions.");
-    if (c.contactName) { L.push(""); L.push(c.contactName); }
+
+    // Warm close
+    L.push("I take pride in delivering clean, quality work on every job. If you have any questions or want to talk through the details, give me a call — I’m always happy to chat.");
+    L.push("");
+    L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
+    L.push("");
+    if (c.contactName) L.push(c.contactName);
     if (c.companyName) L.push(c.companyName);
     if (c.phone)       L.push(c.phone);
     if (c.email)       L.push(c.email);
@@ -1467,24 +1458,13 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
   }
 
   function buildBasicSMSBody() {
-    const D = "--------------------------------";
     const allCons = settings.consumables || [];
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
-    const L = [];
-
-    if (c.companyName) L.push(c.companyName);
-    L.push("Estimate #" + estNum + " | " + today);
-    if (customerName) L.push("For: " + customerName);
-    if (projectDesc)  L.push(projectDesc);
-    L.push(D);
-    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
-    if (svList.length > 0) L.push("Services: " + svList.map(sv => sv.name).join(", "));
-    L.push("");
-
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
     const thinsetC = allCons.find(x => x.id === "thinset");
     const groutC   = allCons.find(x => x.id === "grout");
+    const firstName = customerName ? customerName.split(" ")[0] : "";
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
     const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
     const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
@@ -1508,27 +1488,38 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
     const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
     const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
+    const L = [];
 
-    L.push("PRICE SUMMARY");
-    if (tileSupplied) {
-      L.push("  Tile ................. Customer supplied");
+    if (c.companyName) L.push(c.companyName);
+    L.push("Estimate #" + estNum + " — " + today);
+    L.push("");
+    if (firstName) {
+      L.push("Hi " + firstName + "! " + (projectDesc ? "Here’s your estimate for " + projectDesc + "." : "Here’s your tile estimate."));
     } else {
-      L.push("  Materials ............ " + mp(totalMatCost));
+      L.push(projectDesc ? "Estimate for " + projectDesc + ":" : "Tile installation estimate:");
     }
-    L.push("  Labor ................ " + mp(totalLaborCost));
-    if (svList.length > 0) L.push("  Services ............. " + mp(totalServicesCost));
-    L.push(D);
+    L.push("");
+    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
+    if (svList.length > 0) L.push("Includes: " + svList.map(sv => sv.name).join(", "));
+    if (jobNotes && jobNotes.trim()) L.push("Note: " + jobNotes.trim().replace(/\n/g, " "));
+    L.push("");
+    if (tileSupplied) {
+      L.push("Materials       Customer supplied");
+    } else {
+      L.push("Materials       " + mp(totalMatCost));
+    }
+    L.push("Labor           " + mp(totalLaborCost));
+    if (svList.length > 0) L.push("Services        " + mp(totalServicesCost));
+    L.push("─────────────────────");
     L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
 
     if (terms.trim()) {
-      L.push(""); L.push("TERMS");
-      terms.trim().split("\n").forEach(t => L.push(t));
+      L.push("");
+      L.push("Terms: " + terms.trim().split("\n")[0] + (terms.trim().split("\n").length > 1 ? " (...)" : ""));
     }
-    if (jobNotes && jobNotes.trim()) {
-      L.push(""); L.push("NOTES");
-      jobNotes.trim().split("\n").forEach(t => L.push(t));
-    }
-    if (c.phone) { L.push(""); L.push("Questions? " + c.phone); }
+    L.push("");
+    L.push("Questions? Give me a call" + (c.phone ? " — " + c.phone : "!"));
+    L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
     return L.join("\n");
   }
 
@@ -1834,6 +1825,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing
           "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help
           "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
           "v1.0.1 — Install banner guides Android and iOS users through adding app to home screen",
@@ -1875,7 +1867,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.1.1 — Tile Job Estimator · Built for tile contractors
+        v1.1.2 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
