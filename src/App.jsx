@@ -1,5 +1,81 @@
 import { useState, useRef } from "react";
 
+// ─── IndexedDB Database Layer ─────────────────────────────────────────────────
+const DB_NAME = "tje_db";
+const DB_VERSION = 1;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("estimates")) {
+        const es = db.createObjectStore("estimates", { keyPath: "id" });
+        es.createIndex("date", "date");
+        es.createIndex("customerName", "customerName");
+      }
+      if (!db.objectStoreNames.contains("customers")) {
+        const cs = db.createObjectStore("customers", { keyPath: "id" });
+        cs.createIndex("name", "name");
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror  = e => reject(e.target.error);
+  });
+}
+
+function dbGetAll(store) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+function dbPut(store, record) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, "readwrite");
+    const req = tx.objectStore(store).put(record);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+function dbDelete(store, id) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, "readwrite");
+    const req = tx.objectStore(store).delete(id);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+function dbClear(store) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, "readwrite");
+    const req = tx.objectStore(store).clear();
+    req.onsuccess = e => resolve();
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+// Migrate old localStorage estimates into IndexedDB (runs once)
+async function migrateLocalStorageEstimates() {
+  try {
+    const raw = localStorage.getItem("tje_estimates");
+    if (!raw) return;
+    const old = JSON.parse(raw);
+    if (!old || !old.length) return;
+    for (const record of old) {
+      await dbPut("estimates", record);
+    }
+    localStorage.removeItem("tje_estimates");
+  } catch (e) {}
+}
+
+migrateLocalStorageEstimates();
+
 // ─── Custom Checkbox ──────────────────────────────────────────────────────────
 function Checkbox({ checked, onChange, onClick }) {
   return (
@@ -610,11 +686,161 @@ function SField({ label, value, onChange, hint, suffix, isText }) {
 }
 
 // ─── Main Estimator ───────────────────────────────────────────────────────────
+// ─── Customers Page ───────────────────────────────────────────────────────────
+function CustomersPage({ customers, estimates, onSave, onDelete }) {
+  const [search, setSearch]       = useState("");
+  const [editing, setEditing]     = useState(null); // null | "new" | customer object
+  const [form, setForm]           = useState({ name: "", email: "", phone: "" });
+  const [selectedId, setSelectedId] = useState(null);
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? customers.filter(c => (c.name||"").toLowerCase().includes(q) || (c.email||"").toLowerCase().includes(q) || (c.phone||"").toLowerCase().includes(q))
+    : customers;
+
+  const selectedCustomer = customers.find(c => c.id === selectedId);
+  const customerEstimates = selectedId
+    ? estimates.filter(e => e.customerName && selectedCustomer && e.customerName === selectedCustomer.name)
+    : [];
+
+  const fmtPrice = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  function startEdit(customer) {
+    setForm({ name: customer.name||"", email: customer.email||"", phone: customer.phone||"" });
+    setEditing(customer);
+  }
+  function startNew() {
+    setForm({ name: "", email: "", phone: "" });
+    setEditing("new");
+    setSelectedId(null);
+  }
+  function cancelEdit() { setEditing(null); }
+  function handleSave() {
+    if (!form.name.trim()) { alert("Customer name is required."); return; }
+    const record = editing === "new"
+      ? { id: null, ...form }
+      : { ...editing, ...form };
+    onSave(record).then(saved => {
+      setEditing(null);
+      setSelectedId(saved.id);
+    });
+  }
+
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
+
+      {/* Edit / New form */}
+      {editing && (
+        <div style={{ background: "#13110d", border: "1px solid #c19748", borderRadius: 8, padding: "16px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, marginBottom: 14 }}>
+            {editing === "new" ? "New Customer" : "Edit Customer"}
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {[["name","Name","Jane Smith",true],["email","Email","jane@email.com",false],["phone","Phone","(555) 123-4567",false]].map(([key, label, ph, required]) => (
+              <div key={key}>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{label}{required && " *"}</div>
+                <input value={form[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                  placeholder={ph} style={iStyle} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button onClick={handleSave} style={{
+              flex: 1, padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
+              border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
+              fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
+            }}>Save Customer</button>
+            <button onClick={cancelEdit} style={{
+              padding: "10px 16px", background: "none", border: "1px solid #2e2518",
+              borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 13, fontFamily: "sans-serif",
+            }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Search + add */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "8px 12px" }}>
+          <span style={{ color: "#4a4030", fontSize: 14 }}>🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search customers…"
+            style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }} />
+          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "#5a4f38", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>}
+        </div>
+        <button onClick={startNew} style={{
+          padding: "8px 16px", background: "linear-gradient(135deg,#c19748,#a07830)",
+          border: "none", borderRadius: 8, cursor: "pointer", color: "#0f0f0f",
+          fontSize: 13, fontWeight: 700, fontFamily: "sans-serif", whiteSpace: "nowrap",
+        }}>+ Add</button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>👥</div>
+          <div style={{ fontSize: 14 }}>{q ? "No customers match your search." : "No customers yet."}</div>
+          {!q && <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>Add your first customer with the + Add button above.</div>}
+        </div>
+      ) : filtered.map(c => (
+        <div key={c.id}>
+          <div onClick={() => setSelectedId(selectedId === c.id ? null : c.id)}
+            style={{ background: selectedId === c.id ? "#1a1710" : "#13110d", border: `1px solid ${selectedId === c.id ? "#c19748" : "#2e2518"}`, borderRadius: selectedId === c.id ? "8px 8px 0 0" : 8, padding: "14px 16px", marginBottom: selectedId === c.id ? 0 : 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 12, transition: "all 0.15s" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{c.name}</div>
+              <div style={{ display: "flex", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
+                {c.email && <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.email}</span>}
+                {c.phone && <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.phone}</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button onClick={e2 => { e2.stopPropagation(); startEdit(c); }} style={{ background: "none", border: "1px solid #2e2518", borderRadius: 5, padding: "5px 10px", cursor: "pointer", color: "#8a7d65", fontSize: 11, fontFamily: "sans-serif" }}>Edit</button>
+              <button onClick={e2 => { e2.stopPropagation(); if (window.confirm(`Delete ${c.name}?`)) onDelete(c.id); }} style={{ background: "none", border: "1px solid #3a2518", borderRadius: 5, padding: "5px 10px", cursor: "pointer", color: "#6b5f4a", fontSize: 11, fontFamily: "sans-serif" }}>✕</button>
+            </div>
+            <span style={{ color: "#3a3020", fontSize: 12 }}>{selectedId === c.id ? "▲" : "▼"}</span>
+          </div>
+
+          {/* Customer estimate history */}
+          {selectedId === c.id && (
+            <div style={{ background: "#0f0d0a", border: "1px solid #c19748", borderTop: "none", borderRadius: "0 0 8px 8px", padding: "14px 16px", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+                Estimate History
+              </div>
+              {customerEstimates.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>No estimates sent to this customer yet.</div>
+              ) : customerEstimates.map(e => (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e1a12" }}>
+                  <div>
+                    <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, marginRight: 8 }}>#{e.estNum}</span>
+                    <span style={{ fontSize: 12, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc || e.tileName}</span>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 13, color: "#e8c870", fontFamily: "sans-serif" }}>{fmtPrice(e.totalPrice)}</div>
+                    <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif" }}>{e.date}</div>
+                  </div>
+                </div>
+              ))}
+              {customerEstimates.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, marginTop: 4 }}>
+                  <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{customerEstimates.length} estimate{customerEstimates.length !== 1 ? "s" : ""}</span>
+                  <span style={{ fontSize: 13, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700 }}>
+                    Total: {fmtPrice(customerEstimates.reduce((s, e) => s + (e.totalPrice||0), 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── History Page ─────────────────────────────────────────────────────────────
-function HistoryPage({ estimateHistory, settings, onClear }) {
-  const [search, setSearch] = useState("");
+function HistoryPage({ estimateHistory, customers, settings, onClear, onUpdate, onDelete }) {
+  const [search, setSearch]     = useState("");
   const [expandedId, setExpandedId] = useState(null);
-  const [resendId, setResendId] = useState(null);
+  const [editingId, setEditingId]   = useState(null);
+  const [editForm, setEditForm]     = useState({});
+  const [resendId, setResendId]     = useState(null);
   const [resendMode, setResendMode] = useState("email");
 
   const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -663,6 +889,7 @@ function HistoryPage({ estimateHistory, settings, onClear }) {
       ) : filtered.map(e => {
         const isExpanded = expandedId === e.id;
         const isResending = resendId === e.id;
+        const isEditing = editingId === e.id;
         return (
           <div key={e.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#c19748" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
             {/* Summary row */}
@@ -692,13 +919,43 @@ function HistoryPage({ estimateHistory, settings, onClear }) {
               <div style={{ borderTop: "1px solid #2e2518" }}>
                 {/* Action buttons */}
                 <div style={{ display: "flex", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
-                  <button onClick={e2 => { e2.stopPropagation(); setResendId(isResending ? null : e.id); }} style={{
+                  <button onClick={e2 => { e2.stopPropagation(); setResendId(isResending ? null : e.id); setEditingId(null); }} style={{
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                  }}>
-                    {isResending ? "✕ Cancel" : "↩ Resend"}
-                  </button>
+                  }}>{isResending ? "✕ Cancel" : "↩ Resend"}</button>
+                  <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
+                    borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
+                  <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this estimate record?")) onDelete(e.id); }} style={{
+                    padding: "8px 12px", background: "none", border: "1px solid #3a2518",
+                    borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
+                  }}>✕</button>
                 </div>
+
+                {/* Edit form */}
+                {isEditing && (
+                  <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+                    <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                      {[["customerName","Customer Name"],["customerEmail","Customer Email"],["customerPhone","Customer Phone"],["projectDesc","Project Description"]].map(([key, label]) => (
+                        <div key={key}>
+                          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>{label}</div>
+                          <input value={editForm[key]||""} onChange={ev => setEditForm(p => ({ ...p, [key]: ev.target.value }))} style={iStyle} />
+                        </div>
+                      ))}
+                      <div>
+                        <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Estimate Text (Email)</div>
+                        <textarea value={editForm.emailText||""} onChange={ev => setEditForm(p => ({ ...p, emailText: ev.target.value }))}
+                          rows={5} style={{ ...iStyle, resize: "vertical", lineHeight: 1.6, fontSize: 11, fontFamily: "monospace" }} />
+                      </div>
+                    </div>
+                    <button onClick={() => { onUpdate(e.id, editForm); setEditingId(null); }} style={{
+                      width: "100%", padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
+                      border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
+                      fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
+                    }}>Save Changes</button>
+                  </div>
+                )}
 
                 {/* Resend options */}
                 {isResending && (
@@ -720,7 +977,8 @@ function HistoryPage({ estimateHistory, settings, onClear }) {
                       if (resendMode === "email") {
                         window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
                       } else {
-                        window.open("sms:?&body=" + encodeURIComponent(body));
+                        const to = e.customerPhone ? e.customerPhone.replace(/\D/g, "") : "";
+                        window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
                       }
                     }} style={{
                       width: "100%", padding: "10px", background: "#1e1608",
@@ -1014,10 +1272,19 @@ export default function TileEstimator() {
       return daysSince > 14;
     } catch (e) { return false; }
   });
-  const [estimateHistory, setEstimateHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("tje_estimates") || "[]"); } catch (e) { return []; }
-  });
+  const [estimateHistory, setEstimateHistory] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [dbReady, setDbReady] = useState(false);
   const resultRef = useRef(null);
+
+  // Load from IndexedDB on mount
+  useState(() => {
+    Promise.all([dbGetAll("estimates"), dbGetAll("customers")]).then(([ests, custs]) => {
+      setEstimateHistory(ests.sort((a, b) => new Date(b.date) - new Date(a.date)));
+      setCustomers(custs.sort((a, b) => (a.name||"").localeCompare(b.name||"")));
+      setDbReady(true);
+    }).catch(() => setDbReady(true));
+  });
 
   function handleSaveSettings(s) {
     try { localStorage.setItem("tje_settings", JSON.stringify(s)); } catch (e) {}
@@ -1029,57 +1296,128 @@ export default function TileEstimator() {
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
   }
 
-  function saveEstimateToHistory(estNum, customerName, projectDesc, totalPrice, emailText, smsText) {
+  function saveEstimateToHistory(estNum, customerName, customerEmail, customerPhone, projectDesc, totalPrice, emailText, smsText) {
     const record = {
       id: uid(),
       date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
+      dateISO: new Date().toISOString(),
       estNum,
-      customerName,
-      projectDesc,
+      customerName: customerName || "",
+      customerEmail: customerEmail || "",
+      customerPhone: customerPhone || "",
+      projectDesc: projectDesc || "",
       totalPrice,
+      // Full input snapshot
       sqft: area,
+      tileId: selectedTileId,
       tileName: tile?.name || "",
+      tilePriceSqFt: tilePriceSqFt || "",
+      wastePercent: wastePercent || "10",
+      serviceState: JSON.parse(JSON.stringify(serviceState)),
+      markupMode,
+      markupPercent,
+      jobNotes: jobNotes || "",
+      // Estimate text
       emailText: emailText || "",
       smsText: smsText || "",
     };
-    const next = [record, ...estimateHistory].slice(0, 500);
-    setEstimateHistory(next);
-    try { localStorage.setItem("tje_estimates", JSON.stringify(next)); } catch (e) {}
+    dbPut("estimates", record).then(() => {
+      setEstimateHistory(prev => [record, ...prev].slice(0, 500));
+    }).catch(() => {
+      setEstimateHistory(prev => [record, ...prev].slice(0, 500));
+    });
+  }
+
+  // Customer CRUD
+  function saveCustomer(customer) {
+    const record = { ...customer, id: customer.id || uid() };
+    return dbPut("customers", record).then(() => {
+      setCustomers(prev => {
+        const filtered = prev.filter(c => c.id !== record.id);
+        return [...filtered, record].sort((a, b) => (a.name||"").localeCompare(b.name||""));
+      });
+      return record;
+    });
+  }
+
+  function deleteCustomer(id) {
+    dbDelete("customers", id).then(() => {
+      setCustomers(prev => prev.filter(c => c.id !== id));
+    });
+  }
+
+  function updateEstimateRecord(id, updates) {
+    setEstimateHistory(prev => {
+      const updated = prev.map(e => e.id === id ? { ...e, ...updates } : e);
+      const record = updated.find(e => e.id === id);
+      if (record) dbPut("estimates", record);
+      return updated;
+    });
+  }
+
+  function deleteEstimateRecord(id) {
+    dbDelete("estimates", id).then(() => {
+      setEstimateHistory(prev => prev.filter(e => e.id !== id));
+    });
   }
 
   function handleExport(s) {
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
     const filename = `tje-backup-${stamp}.json`;
-    const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    Promise.all([dbGetAll("estimates"), dbGetAll("customers")]).then(([ests, custs]) => {
+      const backup = { settings: s, estimates: ests, customers: custs, version: "1.3.0", exportDate: now.toISOString() };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    });
   }
 
   function handleImport(jsonText, onLoaded) {
     try {
       const parsed = JSON.parse(jsonText);
-      // Basic validation — must have at least one known top-level key
-      if (!parsed || typeof parsed !== "object" || (!parsed.tiles && !parsed.consumables && !parsed.contractor)) {
+      if (!parsed || typeof parsed !== "object") {
+        alert("This doesn't look like a valid Tile Job Estimator backup file.");
+        return;
+      }
+      // Support both old format (settings only) and new format (settings + estimates + customers)
+      const rawSettings = parsed.settings || parsed;
+      if (!rawSettings.tiles && !rawSettings.consumables && !rawSettings.contractor) {
         alert("This doesn't look like a valid Tile Job Estimator backup file.");
         return;
       }
       const merged = {
         miscPercent: 3, defaultMarkup: 40,
-        consumables: SEED_CONSUMABLES,
-        tiles: SEED_TILES,
-        services: SEED_SERVICES,
+        consumables: SEED_CONSUMABLES, tiles: SEED_TILES, services: SEED_SERVICES,
         contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
         estimateNumber: 1,
         defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
-        ...parsed,
+        ...rawSettings,
       };
       try { localStorage.setItem("tje_settings", JSON.stringify(merged)); } catch (e) {}
       setSettings(merged);
       setMarkupPercent(nv(merged.defaultMarkup, 40));
       onLoaded(merged);
+
+      // Restore estimates
+      if (parsed.estimates && Array.isArray(parsed.estimates)) {
+        dbClear("estimates").then(() => {
+          Promise.all(parsed.estimates.map(e => dbPut("estimates", e))).then(() => {
+            setEstimateHistory(parsed.estimates.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
+          });
+        });
+      }
+      // Restore customers
+      if (parsed.customers && Array.isArray(parsed.customers)) {
+        dbClear("customers").then(() => {
+          Promise.all(parsed.customers.map(c => dbPut("customers", c))).then(() => {
+            setCustomers(parsed.customers.sort((a, b) => (a.name||"").localeCompare(b.name||"")));
+          });
+        });
+      }
+
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 2000);
     } catch (e) {
@@ -1215,13 +1553,13 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.2.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.3.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
           </h1>
           <div className="tje-tabs" style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            {[["estimate","Estimator"],["settings","⚙ Settings"],["history","📋 History"],["help","? Help"]].map(([key, label]) => (
+            {[["estimate","Estimator"],["settings","⚙ Settings"],["customers","👥 Customers"],["history","📋 History"],["help","? Help"]].map(([key, label]) => (
               <button key={key} onClick={() => {
                 if (key !== "settings" && page === "settings") setUnsavedWarning(true);
                 setPage(key);
@@ -1246,11 +1584,22 @@ export default function TileEstimator() {
       </div>
 
       {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} onExport={handleExport} onImport={handleImport} />
+      : page === "customers" ? (
+        <CustomersPage
+          customers={customers}
+          estimates={estimateHistory}
+          onSave={saveCustomer}
+          onDelete={deleteCustomer}
+        />
+      )
       : page === "history"  ? (
         <HistoryPage
           estimateHistory={estimateHistory}
+          customers={customers}
           settings={settings}
-          onClear={() => { setEstimateHistory([]); try { localStorage.removeItem("tje_estimates"); } catch(e){} }}
+          onClear={() => { dbClear("estimates").then(() => setEstimateHistory([])); }}
+          onUpdate={updateEstimateRecord}
+          onDelete={deleteEstimateRecord}
         />
       )
       : page === "help"     ? <HelpPage />
@@ -1527,7 +1876,8 @@ export default function TileEstimator() {
                 markupMode={markupMode}
                 markupPercent={markupPercent}
                 jobNotes={jobNotes}
-                onEstimateSent={(customerName, projectDesc, emailText, smsText) => {
+                customers={customers}
+                onEstimateSent={(customerName, customerEmail, customerPhone, projectDesc, emailText, smsText) => {
                   setSettings(p => {
                     const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
                     try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
@@ -1535,7 +1885,7 @@ export default function TileEstimator() {
                   });
                   saveEstimateToHistory(
                     String(settings.estimateNumber || 1).padStart(4, "0"),
-                    customerName, projectDesc, customerPrice, emailText, smsText
+                    customerName, customerEmail, customerPhone, projectDesc, customerPrice, emailText, smsText
                   );
                 }}
               />
@@ -1562,16 +1912,20 @@ export default function TileEstimator() {
 // ─── Send Estimate ───────────────────────────────────────────
 function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqFt,
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
-  markupMode, markupPercent, jobNotes, onEstimateSent }) {
+  markupMode, markupPercent, jobNotes, customers, onEstimateSent }) {
 
-  const [showPreview, setShowPreview]   = useState(false);
-  const [sendMode, setSendMode]         = useState(null);
-  const [estimateStyle, setEstimateStyle] = useState("itemized"); // "itemized" | "basic"
-  const [terms, setTerms]               = useState(settings.defaultTerms || "");
-  const [customerName, setCustomerName] = useState("");
-  const [projectDesc, setProjectDesc]   = useState("");
-  const [sent, setSent]                 = useState(false);
-  const [sending, setSending]           = useState(false);
+  const [showPreview, setShowPreview]     = useState(false);
+  const [sendMode, setSendMode]           = useState(null);
+  const [estimateStyle, setEstimateStyle] = useState("itemized");
+  const [terms, setTerms]                 = useState(settings.defaultTerms || "");
+  const [customerName, setCustomerName]   = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [projectDesc, setProjectDesc]     = useState("");
+  const [sent, setSent]                   = useState(false);
+  const [sending, setSending]             = useState(false);
+  const [showPicker, setShowPicker]       = useState(false);
+  const [pickerSearch, setPickerSearch]   = useState("");
 
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const c       = settings.contractor || {};
@@ -1953,11 +2307,13 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     const body    = sendMode === "email" ? emailText : smsText;
     const subject = "Tile Installation Estimate #" + estNum + (customerName ? " — " + customerName : "");
     if (sendMode === "email") {
-      window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
+      const to = customerEmail ? encodeURIComponent(customerEmail) : "";
+      window.open("mailto:" + to + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
     } else {
-      window.open("sms:?&body=" + encodeURIComponent(body));
+      const to = customerPhone ? customerPhone.replace(/\D/g, "") : "";
+      window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
     }
-    onEstimateSent(customerName, projectDesc, emailText, smsText);
+    onEstimateSent(customerName, customerEmail, customerPhone, projectDesc, emailText, smsText);
     setSending(false);
     setSent(true);
     setTimeout(() => setSent(false), 3000);
@@ -2018,11 +2374,64 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+      </div>
+
+      {/* Customer Picker */}
+      {customers && customers.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <button onClick={() => setShowPicker(p => !p)} style={{
+            width: "100%", padding: "9px 12px", background: "#0f0d0a",
+            border: "1px solid #3a2e1a", borderRadius: 6, cursor: "pointer",
+            color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", textAlign: "left", display: "flex", justifyContent: "space-between",
+          }}>
+            <span>👥 {customerName ? `Selected: ${customerName}` : "Select from customers…"}</span>
+            <span>{showPicker ? "▲" : "▼"}</span>
+          </button>
+          {showPicker && (
+            <div style={{ background: "#0a0907", border: "1px solid #2e2518", borderRadius: "0 0 6px 6px", borderTop: "none", maxHeight: 200, overflowY: "auto" }}>
+              <div style={{ padding: "8px 10px", borderBottom: "1px solid #1e1a12" }}>
+                <input value={pickerSearch} onChange={e => setPickerSearch(e.target.value)}
+                  placeholder="Search customers…"
+                  style={{ ...iStyle, fontSize: 12, padding: "5px 8px" }} />
+              </div>
+              {customers.filter(c => !pickerSearch || (c.name||"").toLowerCase().includes(pickerSearch.toLowerCase())).map(c => (
+                <div key={c.id} onClick={() => {
+                  setCustomerName(c.name || "");
+                  setCustomerEmail(c.email || "");
+                  setCustomerPhone(c.phone || "");
+                  setShowPicker(false);
+                  setPickerSearch("");
+                }} style={{
+                  padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #1a1710",
+                  background: customerName === c.name ? "rgba(193,151,72,0.08)" : "transparent",
+                }}>
+                  <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif" }}>{c.name}</div>
+                  {c.email && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.email}</div>}
+                  {c.phone && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.phone}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Name</div>
           <input value={customerName} onChange={e => setCustomerName(e.target.value)}
             placeholder="Sarah & Tom Williams" style={iStyle} />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Email</div>
+          <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)}
+            placeholder="sarah@email.com" style={iStyle} />
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Phone</div>
+          <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
+            placeholder="(555) 867-5309" style={iStyle} />
         </div>
         <div>
           <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Project Description</div>
@@ -2247,6 +2656,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.3.0 — IndexedDB storage, Customer database, customer email to mail, full input snapshots, editable history, backup includes estimates + customers",
           "v1.2.0 — Customer Presentation Mode, logo upload, History search + expand + resend, backup reminder, history cap raised to 500",
           "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing",
           "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help",
@@ -2290,7 +2700,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.2.0 — Tile Job Estimator · Built for tile contractors
+        v1.3.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
