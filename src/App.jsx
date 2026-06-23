@@ -297,6 +297,47 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
             </div>
           </div>
 
+          {/* Logo Upload */}
+          <div style={{ marginBottom: 20, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>Company Logo</div>
+            <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 12, fontStyle: "italic" }}>
+              Shown on the customer presentation screen. Use a PNG or JPG under 500KB — square or landscape works best.
+            </div>
+            {s.contractor?.logo ? (
+              <div style={{ marginBottom: 12 }}>
+                <img src={s.contractor.logo} alt="Company logo" style={{ maxHeight: 80, maxWidth: "100%", borderRadius: 6, objectFit: "contain", background: "#1a1610", padding: 8 }} />
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12, background: "#1a1610", border: "1px dashed #3a3020", borderRadius: 6, padding: "20px", textAlign: "center", color: "#3a3020", fontFamily: "sans-serif", fontSize: 12 }}>
+                No logo uploaded
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <label style={{
+                flex: 1, padding: "9px 0", background: "#1a1610", border: "1px solid #3a3020",
+                borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12,
+                fontFamily: "sans-serif", textAlign: "center", fontWeight: 600,
+              }}>
+                {s.contractor?.logo ? "Replace Logo" : "Upload Logo"}
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 512000) { alert("Please use an image under 500KB."); return; }
+                  const reader = new FileReader();
+                  reader.onload = ev => setS(p => ({ ...p, contractor: { ...p.contractor, logo: ev.target.result } }));
+                  reader.readAsDataURL(file);
+                  e.target.value = "";
+                }} />
+              </label>
+              {s.contractor?.logo && (
+                <button onClick={() => setS(p => ({ ...p, contractor: { ...p.contractor, logo: "" } }))} style={{
+                  padding: "9px 14px", background: "none", border: "1px solid #3a2518",
+                  borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
+                }}>Remove</button>
+              )}
+            </div>
+          </div>
+
           {/* Estimate Number */}
           <div style={{ marginBottom: 20, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10, fontWeight: 700 }}>Estimate Numbering</div>
@@ -568,6 +609,354 @@ function SField({ label, value, onChange, hint, suffix, isText }) {
 }
 
 // ─── Main Estimator ───────────────────────────────────────────────────────────
+// ─── History Page ─────────────────────────────────────────────────────────────
+function HistoryPage({ estimateHistory, settings, onClear }) {
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [resendId, setResendId] = useState(null);
+  const [resendMode, setResendMode] = useState("email");
+
+  const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? estimateHistory.filter(e =>
+        (e.customerName||"").toLowerCase().includes(q) ||
+        (e.projectDesc||"").toLowerCase().includes(q) ||
+        (e.tileName||"").toLowerCase().includes(q)
+      )
+    : estimateHistory;
+
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
+      {/* Search bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
+        <span style={{ color: "#4a4030", fontSize: 14 }}>🔍</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by customer, project, or tile type…"
+          style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }}
+        />
+        {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "#5a4f38", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>
+          {q ? `${filtered.length} of ${estimateHistory.length} estimates` : `${estimateHistory.length} estimate${estimateHistory.length !== 1 ? "s" : ""}`}
+        </div>
+        {estimateHistory.length > 0 && (
+          <button onClick={() => {
+            if (window.confirm("Clear all estimate history? This cannot be undone.")) onClear();
+          }} style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
+            Clear History
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+          <div style={{ fontSize: 14 }}>{q ? "No estimates match your search." : "No estimates sent yet."}</div>
+          {!q && <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>Estimates appear here after you send them to a customer.</div>}
+        </div>
+      ) : filtered.map(e => {
+        const isExpanded = expandedId === e.id;
+        const isResending = resendId === e.id;
+        return (
+          <div key={e.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#c19748" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
+            {/* Summary row */}
+            <div onClick={() => { setExpandedId(isExpanded ? null : e.id); setResendId(null); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", cursor: "pointer" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, flexShrink: 0 }}>#{e.estNum}</span>
+                  <span style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {e.customerName || "No customer name"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {e.projectDesc && <span style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc}</span>}
+                  <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{e.tileName}{e.sqft ? " · " + e.sqft + " sqft" : ""}</span>
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 16, color: "#e8c870", fontFamily: "sans-serif", fontWeight: 600 }}>{fmt(e.totalPrice)}</div>
+                <div style={{ fontSize: 11, color: "#3a3020", fontFamily: "sans-serif", marginTop: 2 }}>{e.date}</div>
+              </div>
+              <div style={{ color: "#3a3020", fontSize: 12, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</div>
+            </div>
+
+            {/* Expanded view */}
+            {isExpanded && (
+              <div style={{ borderTop: "1px solid #2e2518" }}>
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
+                  <button onClick={e2 => { e2.stopPropagation(); setResendId(isResending ? null : e.id); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>
+                    {isResending ? "✕ Cancel" : "↩ Resend"}
+                  </button>
+                </div>
+
+                {/* Resend options */}
+                {isResending && (
+                  <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      {["email", "text"].map(mode => (
+                        <button key={mode} onClick={() => setResendMode(mode)} style={{
+                          flex: 1, padding: "8px", borderRadius: 6, cursor: "pointer",
+                          border: `1px solid ${resendMode === mode ? "#c19748" : "#2e2518"}`,
+                          background: resendMode === mode ? "#1e1a10" : "#13110d",
+                          color: resendMode === mode ? "#c19748" : "#5a4f38",
+                          fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                        }}>{mode === "email" ? "✉ Email" : "💬 Text"}</button>
+                      ))}
+                    </div>
+                    <button onClick={() => {
+                      const body = resendMode === "email" ? (e.emailText || e.smsText || "") : (e.smsText || e.emailText || "");
+                      const subject = "Tile Installation Estimate #" + e.estNum + (e.customerName ? " — " + e.customerName : "");
+                      if (resendMode === "email") {
+                        window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
+                      } else {
+                        window.open("sms:?&body=" + encodeURIComponent(body));
+                      }
+                    }} style={{
+                      width: "100%", padding: "10px", background: "#1e1608",
+                      border: "1px solid #c19748", borderRadius: 6, cursor: "pointer",
+                      color: "#c19748", fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
+                    }}>
+                      {resendMode === "email" ? "Open in Mail App →" : "Open in Messages App →"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Full estimate text */}
+                <div style={{ padding: "16px" }}>
+                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                    Estimate Text
+                  </div>
+                  <div style={{ background: "#0a0907", border: "1px solid #1e1a12", borderRadius: 6, padding: "12px 14px",
+                    fontSize: 11, color: "#6b5f4a", fontFamily: "monospace", lineHeight: 1.8,
+                    whiteSpace: "pre-wrap", maxHeight: 320, overflowY: "auto" }}>
+                    {e.emailText || e.smsText || "No estimate text saved — this record was created before text storage was added."}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Customer Presentation Mode ───────────────────────────────────────────────
+function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, area, tile,
+  tileWithWaste, tilePriceSqFt, enabledServices, serviceState, jobNotes, trueCost, markupMode,
+  markupPercent, estimateNumber, onClose }) {
+
+  const c = settings.contractor || {};
+  const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtD = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+  const mp = cost => fmtD(cost * ratio);
+  const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
+  const allCons = settings.consumables || [];
+  const thinsetC = allCons.find(x => x.id === "thinset");
+  const groutC   = allCons.find(x => x.id === "grout");
+  const firstName = customerName ? customerName.split(" ")[0] : "";
+  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const estNum = String(estimateNumber || 1).padStart(4, "0");
+
+  function getServiceTotal(sv) {
+    const st = serviceState[sv.id] || {};
+    const labor = (area || 0) * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
+    const mats = (sv.consumableIds || []).reduce((sum, cId) => {
+      const cons = allCons.find(x => x.id === cId);
+      if (!cons) return sum;
+      const ovVal = st.overrides?.[cId];
+      const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
+        cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
+      const base = cons.priceType === "bag"
+        ? ((area || 0) / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
+        : cons.priceType === "sqft" ? (area || 0) * effPrice : effPrice;
+      return sum + base;
+    }, 0);
+    return labor + mats;
+  }
+
+  const svList = enabledServices || [];
+
+  // Compute category totals for summary
+  const tileMat = tileSupplied ? 0 : (tileWithWaste || 0) * (parseFloat(tilePriceSqFt) || 0);
+  const thinMat = thinsetC ? ((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)) * (parseFloat(thinsetC.bagPrice)||0) : 0;
+  const groutMat = groutC  ? ((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1))  * (parseFloat(groutC.bagPrice)||0)  : 0;
+  const svMatCost = svList.reduce((sum, sv) => {
+    const st = serviceState[sv.id] || {};
+    return sum + (sv.consumableIds||[]).reduce((s2, cId) => {
+      const cons = allCons.find(x => x.id === cId);
+      if (!cons) return s2;
+      const ovVal = st.overrides?.[cId];
+      const effPrice = ovVal !== undefined ? parseFloat(ovVal)||0 : cons.priceType==="bag" ? parseFloat(cons.bagPrice)||0 : parseFloat(cons.unitCost)||0;
+      return s2 + (cons.priceType==="bag" ? ((area||0)/Math.max(1,parseFloat(cons.bagCoverage)||1))*effPrice : cons.priceType==="sqft" ? (area||0)*effPrice : effPrice);
+    }, 0);
+  }, 0);
+  const miscCost = trueCost - (tileMat + (tile ? (area||0)*(parseFloat(tile.labor)||0) : 0) + thinMat + groutMat + svList.reduce((s,sv)=>s+getServiceTotal(sv),0));
+  const totalMat  = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
+  const totalLabor = tile ? (area||0) * (parseFloat(tile.labor)||0) : 0;
+  const totalSvc   = svList.reduce((s,sv) => s + getServiceTotal(sv), 0);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "linear-gradient(160deg, #1a1608 0%, #0a0906 60%, #13100a 100%)",
+      overflowY: "auto", WebkitOverflowScrolling: "touch",
+      display: "flex", flexDirection: "column",
+    }}>
+      {/* Exit button */}
+      <button onClick={onClose} style={{
+        position: "fixed", top: 16, right: 16, zIndex: 10000,
+        background: "rgba(15,13,10,0.85)", border: "1px solid #3a3020",
+        borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+        color: "#5a4f38", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600, letterSpacing: 1,
+      }}>✕ EXIT</button>
+
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "48px 28px 80px", width: "100%" }}>
+
+        {/* Logo / Company Header */}
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          {c.logo ? (
+            <img src={c.logo} alt={c.companyName || "Company logo"} style={{
+              maxHeight: 90, maxWidth: 280, objectFit: "contain", marginBottom: 16,
+            }} />
+          ) : c.companyName ? (
+            <div style={{ fontSize: 26, color: "#c19748", fontFamily: "'Georgia','Times New Roman',serif", marginBottom: 8, letterSpacing: 1 }}>
+              {c.companyName}
+            </div>
+          ) : null}
+          {c.companyName && c.logo && (
+            <div style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif", marginBottom: 4 }}>{c.companyName}</div>
+          )}
+          {c.contactName && <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.contactName}</div>}
+          {c.phone && <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.phone}</div>}
+        </div>
+
+        {/* Estimate label */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 6, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 8 }}>
+            Estimate #{estNum}
+          </div>
+          <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif" }}>{today}</div>
+          {customerName && (
+            <div style={{ fontSize: 18, color: "#d4c49a", fontFamily: "'Georgia','Times New Roman',serif", marginTop: 12 }}>
+              Prepared for {customerName}
+            </div>
+          )}
+          {projectDesc && (
+            <div style={{ fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif", marginTop: 4, fontStyle: "italic" }}>{projectDesc}</div>
+          )}
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: "linear-gradient(to right, transparent, #c19748, transparent)", marginBottom: 36 }} />
+
+        {/* Project snapshot */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Project Details</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Area</div>
+              <div style={{ fontSize: 20, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{area} sqft</div>
+            </div>
+            <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Tile</div>
+              <div style={{ fontSize: 16, color: "#d4c49a", fontFamily: "'Georgia','Times New Roman',serif" }}>{tile?.name || "—"}</div>
+            </div>
+            {!tileSupplied && (
+              <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Material to Order</div>
+                <div style={{ fontSize: 18, color: "#d4c49a", fontFamily: "'Georgia','Times New Roman',serif" }}>{(tileWithWaste||0).toFixed(0)} sqft</div>
+              </div>
+            )}
+            {svList.length > 0 && (
+              <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px", gridColumn: tileSupplied ? "1 / -1" : "auto" }}>
+                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Additional Services</div>
+                <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif" }}>{svList.map(sv => sv.name).join(", ")}</div>
+              </div>
+            )}
+          </div>
+          {jobNotes && jobNotes.trim() && (
+            <div style={{ marginTop: 12, background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 16px" }}>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Notes</div>
+              <div style={{ fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif", lineHeight: 1.6 }}>{jobNotes}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Price summary */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Price Summary</div>
+          <div style={{ background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 10, overflow: "hidden" }}>
+            {tileSupplied ? (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1e1a12" }}>
+                <span style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif" }}>Tile Material</span>
+                <span style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif", fontStyle: "italic" }}>Customer supplied</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1e1a12" }}>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Materials</span>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalMat)}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: svList.length > 0 ? "1px solid #1e1a12" : "none" }}>
+              <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Labor</span>
+              <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalLabor)}</span>
+            </div>
+            {svList.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px" }}>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Additional Services</span>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalSvc)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Total — hero number */}
+        <div style={{ background: "linear-gradient(135deg, #1e1a10, #13110d)", border: "2px solid #c19748", borderRadius: 12, padding: "28px 24px", textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 12, color: "#c19748", letterSpacing: 6, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 12 }}>Total Investment</div>
+          <div style={{ fontSize: 52, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif", fontWeight: 400, letterSpacing: -1 }}>
+            {fmt(customerPrice)}
+          </div>
+          <div style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 8 }}>
+            {fmtD(customerPrice / (area || 1))} per square foot
+          </div>
+        </div>
+
+        {/* Terms */}
+        {settings.defaultTerms && settings.defaultTerms.trim() && (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 11, color: "#3a3020", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 10 }}>Terms</div>
+            {settings.defaultTerms.trim().split("\n").map((t, i) => (
+              <div key={i} style={{ fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", lineHeight: 1.8 }}>{t}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ height: 1, background: "linear-gradient(to right, transparent, #2e2518, transparent)", marginBottom: 24 }} />
+        <div style={{ textAlign: "center", color: "#3a3020", fontFamily: "sans-serif", fontSize: 12, lineHeight: 1.8 }}>
+          {c.contactName && <div>{c.contactName}</div>}
+          {c.companyName && <div>{c.companyName}</div>}
+          {c.phone && <div>{c.phone}</div>}
+          {c.email && <div>{c.email}</div>}
+          {c.website && <div>{c.website}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TileEstimator() {
   const [page, setPage] = useState("estimate");
   const [settings, setSettings] = useState(() => {
@@ -612,6 +1001,15 @@ export default function TileEstimator() {
   const [markupPercent, setMarkupPercent]   = useState(40);
   const [manualPrice, setManualPrice]       = useState("");
   const [showBreakdown, setShowBreakdown]   = useState(false);
+  const [showPresentation, setShowPresentation] = useState(false);
+  const [showBackupReminder, setShowBackupReminder] = useState(() => {
+    try {
+      const last = localStorage.getItem("tje_last_backup_reminder");
+      if (!last) return true;
+      const daysSince = (Date.now() - parseInt(last)) / (1000 * 60 * 60 * 24);
+      return daysSince > 14;
+    } catch (e) { return false; }
+  });
   const [estimateHistory, setEstimateHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem("tje_estimates") || "[]"); } catch (e) { return []; }
   });
@@ -627,7 +1025,7 @@ export default function TileEstimator() {
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
   }
 
-  function saveEstimateToHistory(estNum, customerName, projectDesc, totalPrice) {
+  function saveEstimateToHistory(estNum, customerName, projectDesc, totalPrice, emailText, smsText) {
     const record = {
       id: uid(),
       date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
@@ -637,8 +1035,10 @@ export default function TileEstimator() {
       totalPrice,
       sqft: area,
       tileName: tile?.name || "",
+      emailText: emailText || "",
+      smsText: smsText || "",
     };
-    const next = [record, ...estimateHistory].slice(0, 50);
+    const next = [record, ...estimateHistory].slice(0, 500);
     setEstimateHistory(next);
     try { localStorage.setItem("tje_estimates", JSON.stringify(next)); } catch (e) {}
   }
@@ -761,13 +1161,57 @@ export default function TileEstimator() {
     <div style={{ minHeight: "100vh", background: "#0f0f0f", color: "#f0ede6", fontFamily: "'Georgia','Times New Roman',serif" }}>
       <style>{`.tje-tabs::-webkit-scrollbar { display: none; }`}</style>
 
+      {/* Customer Presentation Overlay */}
+      {showPresentation && (
+        <CustomerPresentation
+          settings={settings}
+          customerName=""
+          projectDesc={jobNotes}
+          customerPrice={customerPrice}
+          area={area}
+          tile={tile}
+          tileWithWaste={tileWithWaste}
+          tilePriceSqFt={tilePriceSqFt}
+          enabledServices={enabledServices}
+          serviceState={serviceState}
+          jobNotes={jobNotes}
+          trueCost={trueCost}
+          markupMode={markupMode}
+          markupPercent={markupPercent}
+          estimateNumber={settings.estimateNumber}
+          onClose={() => setShowPresentation(false)}
+        />
+      )}
+
+      {/* Backup Reminder Banner */}
+      {showBackupReminder && page === "estimate" && (
+        <div style={{ background: "#0f0c06", borderBottom: "1px solid #3a2e1a", padding: "10px 16px", display: "flex", alignItems: "flex-start", gap: 10, fontFamily: "sans-serif" }}>
+          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>💾</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "#c19748", fontWeight: 700, marginBottom: 2 }}>Back up your settings</div>
+            <div style={{ fontSize: 11, color: "#5a4f38", lineHeight: 1.5 }}>
+              Your settings and estimate history are stored on this device only. If you clear the app, switch phones, or reinstall, everything will be lost. Export a backup regularly to keep your data safe.
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => { setPage("settings"); setShowBackupReminder(false); try { localStorage.setItem("tje_last_backup_reminder", Date.now()); } catch(e){} }} style={{
+              background: "linear-gradient(135deg,#c19748,#a07830)", border: "none", borderRadius: 6,
+              padding: "6px 12px", cursor: "pointer", color: "#0f0f0f", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+            }}>Back Up Now</button>
+            <button onClick={() => { setShowBackupReminder(false); try { localStorage.setItem("tje_last_backup_reminder", Date.now()); } catch(e){} }} style={{
+              background: "none", border: "none", color: "#3a3020", fontSize: 11, cursor: "pointer", padding: "2px 0",
+            }}>Remind me later</button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background: "linear-gradient(135deg,#1a1208,#0f0f0f)", borderBottom: "1px solid #3a2e1a", padding: "28px 32px 0", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(193,151,72,0.03) 20px,rgba(193,151,72,0.03) 21px)", pointerEvents: "none" }} />
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.2</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.2.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -799,43 +1243,11 @@ export default function TileEstimator() {
 
       {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} onExport={handleExport} onImport={handleImport} />
       : page === "history"  ? (
-        <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-            <div style={{ fontSize: 13, color: "#8a7d65", fontFamily: "sans-serif" }}>Last {estimateHistory.length} estimate{estimateHistory.length !== 1 ? "s" : ""} sent</div>
-            {estimateHistory.length > 0 && (
-              <button onClick={() => {
-                if (window.confirm("Clear all estimate history? This cannot be undone.")) {
-                  setEstimateHistory([]);
-                  try { localStorage.removeItem("tje_estimates"); } catch (e) {}
-                }
-              }} style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
-                Clear History
-              </button>
-            )}
-          </div>
-          {estimateHistory.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
-              <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
-              <div style={{ fontSize: 14 }}>No estimates sent yet.</div>
-              <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>Estimates appear here after you send them to a customer.</div>
-            </div>
-          ) : estimateHistory.map(e => (
-            <div key={e.id} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700 }}>#{e.estNum}</span>
-                  <span style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{e.customerName || "No customer name"}</span>
-                </div>
-                <span style={{ fontSize: 18, color: "#e8c870", fontFamily: "sans-serif" }}>{fmt(e.totalPrice)}</span>
-              </div>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                {e.projectDesc && <span style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc}</span>}
-                <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{e.tileName} · {e.sqft} sqft</span>
-                <span style={{ fontSize: 11, color: "#3a3020", fontFamily: "sans-serif", marginLeft: "auto" }}>{e.date}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <HistoryPage
+          estimateHistory={estimateHistory}
+          settings={settings}
+          onClear={() => { setEstimateHistory([]); try { localStorage.removeItem("tje_estimates"); } catch(e){} }}
+        />
       )
       : page === "help"     ? <HelpPage />
       : (
@@ -1111,7 +1523,7 @@ export default function TileEstimator() {
                 markupMode={markupMode}
                 markupPercent={markupPercent}
                 jobNotes={jobNotes}
-                onEstimateSent={(customerName, projectDesc) => {
+                onEstimateSent={(customerName, projectDesc, emailText, smsText) => {
                   setSettings(p => {
                     const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
                     try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
@@ -1119,10 +1531,16 @@ export default function TileEstimator() {
                   });
                   saveEstimateToHistory(
                     String(settings.estimateNumber || 1).padStart(4, "0"),
-                    customerName, projectDesc, customerPrice
+                    customerName, projectDesc, customerPrice, emailText, smsText
                   );
                 }}
               />
+              <button onClick={() => setShowPresentation(true)} style={{
+                width: "100%", padding: "14px", marginBottom: 10,
+                background: "linear-gradient(135deg, #1a1610, #13110d)",
+                border: "1px solid #c19748", borderRadius: 8, cursor: "pointer",
+                color: "#c19748", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
+              }}>👁 Show Customer</button>
               <button onClick={resetEstimate} style={{
                 width: "100%", padding: "14px", background: "transparent",
                 border: "1px solid #2e2518", borderRadius: 8, cursor: "pointer",
@@ -1526,16 +1944,16 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
   function handleSend() {
     setSending(true);
     if (navigator.vibrate) navigator.vibrate(10);
-    const body = estimateStyle === "basic"
-      ? (sendMode === "email" ? buildBasicEmailBody() : buildBasicSMSBody())
-      : (sendMode === "email" ? buildEmailBody()      : buildSMSBody());
+    const emailText = estimateStyle === "basic" ? buildBasicEmailBody() : buildEmailBody();
+    const smsText   = estimateStyle === "basic" ? buildBasicSMSBody()   : buildSMSBody();
+    const body    = sendMode === "email" ? emailText : smsText;
     const subject = "Tile Installation Estimate #" + estNum + (customerName ? " — " + customerName : "");
     if (sendMode === "email") {
       window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
     } else {
       window.open("sms:?&body=" + encodeURIComponent(body));
     }
-    onEstimateSent(customerName, projectDesc);
+    onEstimateSent(customerName, projectDesc, emailText, smsText);
     setSending(false);
     setSent(true);
     setTimeout(() => setSent(false), 3000);
@@ -1825,6 +2243,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.2.0 — Customer Presentation Mode, logo upload, History search + expand + resend, backup reminder, history cap raised to 500
           "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing",
           "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help",
           "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
@@ -1867,7 +2286,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.1.2 — Tile Job Estimator · Built for tile contractors
+        v1.2.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
