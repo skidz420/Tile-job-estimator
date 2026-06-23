@@ -2243,7 +2243,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
-          "v1.2.0 — Customer Presentation Mode, logo upload, History search + expand + resend, backup reminder, history cap raised to 500
+          "v1.2.0 — Customer Presentation Mode, logo upload, History search + expand + resend, backup reminder, history cap raised to 500",
           "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing",
           "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help",
           "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
