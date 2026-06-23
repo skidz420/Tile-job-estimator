@@ -1156,29 +1156,105 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
           )}
         </div>
 
-        {/* Price summary */}
+        {/* Price breakdown — full itemized */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Price Summary</div>
+          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Price Breakdown</div>
           <div style={{ background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 10, overflow: "hidden" }}>
+
+            {/* Tile material */}
             {tileSupplied ? (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1e1a12" }}>
-                <span style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif" }}>Tile Material</span>
-                <span style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif", fontStyle: "italic" }}>Customer supplied</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Tile Material</span>
+                <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Customer supplied</span>
               </div>
             ) : (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1e1a12" }}>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Materials</span>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalMat)}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                <div>
+                  <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile?.name} — Tile Material</div>
+                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(tileWithWaste||0).toFixed(0)} sqft ordered (includes waste)</div>
+                </div>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(tileMat)}</span>
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px", borderBottom: svList.length > 0 ? "1px solid #1e1a12" : "none" }}>
-              <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Labor</span>
-              <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalLabor)}</span>
-            </div>
-            {svList.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px" }}>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Additional Services</span>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(totalSvc)}</span>
+
+            {/* Installation labor */}
+            {tile && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                <div>
+                  <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile.name} — Installation</div>
+                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{area} sqft</div>
+                </div>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(totalLabor)}</span>
+              </div>
+            )}
+
+            {/* Thinset */}
+            {thinsetC && (() => {
+              const cost = ((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)) * (parseFloat(thinsetC.bagPrice)||0);
+              return cost > 0 ? (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                  <div>
+                    <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Thinset / Mortar</div>
+                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)).toFixed(1)} bags</div>
+                  </div>
+                  <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
+                </div>
+              ) : null;
+            })()}
+
+            {/* Grout */}
+            {groutC && (() => {
+              const cost = ((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1)) * (parseFloat(groutC.bagPrice)||0);
+              return cost > 0 ? (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: svList.length > 0 ? "1px solid #1a1710" : "none" }}>
+                  <div>
+                    <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Grout</div>
+                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1)).toFixed(1)} bags</div>
+                  </div>
+                  <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
+                </div>
+              ) : null;
+            })()}
+
+            {/* Each service */}
+            {svList.map((sv, svIdx) => {
+              const st = serviceState[sv.id] || {};
+              const svConsumables = (sv.consumableIds||[]).map(cId => allCons.find(x => x.id === cId)).filter(Boolean);
+              const isLast = svIdx === svList.length - 1;
+              return (
+                <div key={sv.id} style={{ borderBottom: isLast ? "none" : "1px solid #1a1710" }}>
+                  {/* Service header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px 6px", background: "rgba(193,151,72,0.04)" }}>
+                    <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name}</span>
+                    <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(getServiceTotal(sv))}</span>
+                  </div>
+                  {/* Service labor */}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
+                    <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>Labor</span>
+                    <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp((area||0) * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt)||0))}</span>
+                  </div>
+                  {/* Service materials */}
+                  {svConsumables.map(c => {
+                    const ovVal = st.overrides?.[c.id];
+                    const effPrice = ovVal !== undefined ? parseFloat(ovVal)||0 : c.priceType==="bag" ? parseFloat(c.bagPrice)||0 : parseFloat(c.unitCost)||0;
+                    const lineCost = c.priceType==="bag" ? ((area||0)/Math.max(1,parseFloat(c.bagCoverage)||1))*effPrice : c.priceType==="sqft" ? (area||0)*effPrice : effPrice;
+                    return lineCost > 0 ? (
+                      <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
+                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.name}</span>
+                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp(lineCost)}</span>
+                      </div>
+                    ) : null;
+                  })}
+                  <div style={{ height: 6 }} />
+                </div>
+              );
+            })}
+
+            {/* Misc supplies */}
+            {miscCost > 0.01 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderTop: "1px solid #1a1710" }}>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Supplies & Sundries</span>
+                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(miscCost)}</span>
               </div>
             )}
           </div>
