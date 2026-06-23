@@ -759,6 +759,7 @@ export default function TileEstimator() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f0f0f", color: "#f0ede6", fontFamily: "'Georgia','Times New Roman',serif" }}>
+      <style>{`.tje-tabs::-webkit-scrollbar { display: none; }`}</style>
 
       {/* Header */}
       <div style={{ background: "linear-gradient(135deg,#1a1208,#0f0f0f)", borderBottom: "1px solid #3a2e1a", padding: "28px 32px 0", position: "relative", overflow: "hidden" }}>
@@ -766,18 +767,18 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.1.1</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
           </h1>
-          <div style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center" }}>
+          <div className="tje-tabs" style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
             {[["estimate","Estimator"],["settings","⚙ Settings"],["history","📋 History"],["help","? Help"]].map(([key, label]) => (
               <button key={key} onClick={() => {
                 if (key !== "settings" && page === "settings") setUnsavedWarning(true);
                 setPage(key);
               }} style={{
-                padding: "10px 22px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
+                padding: "10px 22px", border: "none", cursor: "pointer", fontFamily: "sans-serif", flexShrink: 0,
                 fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", background: "transparent",
                 color: page === key ? "#c19748" : "#5a4f38",
                 borderBottom: page === key ? "2px solid #c19748" : "2px solid transparent",
@@ -1833,6 +1834,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help
           "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
           "v1.0.1 — Install banner guides Android and iOS users through adding app to home screen",
           "v1.0.0 — Progressive Web App: install to home screen, works fully offline; custom TJE icon; service worker caches all assets",
@@ -1873,7 +1875,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.1.0 — Tile Job Estimator · Built for tile contractors
+        v1.1.1 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
