@@ -308,8 +308,9 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
                 <img src={s.contractor.logo} alt="Company logo" style={{ maxHeight: 80, maxWidth: "100%", borderRadius: 6, objectFit: "contain", background: "#1a1610", padding: 8 }} />
               </div>
             ) : (
-              <div style={{ marginBottom: 12, background: "#1a1610", border: "1px dashed #3a3020", borderRadius: 6, padding: "20px", textAlign: "center", color: "#3a3020", fontFamily: "sans-serif", fontSize: 12 }}>
-                No logo uploaded
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Default (shown until you upload your own)</div>
+                <img src="/icons/default-logo.png" alt="Default logo" style={{ maxHeight: 60, maxWidth: "100%", borderRadius: 6, objectFit: "contain", background: "#1a1610", padding: 8, opacity: 0.7 }} />
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
@@ -830,13 +831,16 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
             <img src={c.logo} alt={c.companyName || "Company logo"} style={{
               maxHeight: 90, maxWidth: 280, objectFit: "contain", marginBottom: 16,
             }} />
-          ) : c.companyName ? (
-            <div style={{ fontSize: 26, color: "#c19748", fontFamily: "'Georgia','Times New Roman',serif", marginBottom: 8, letterSpacing: 1 }}>
-              {c.companyName}
-            </div>
-          ) : null}
+          ) : (
+            <img src="/icons/default-logo.png" alt="Precision Tile Co." style={{
+              maxHeight: 90, maxWidth: 320, objectFit: "contain", marginBottom: 16, opacity: 0.85,
+            }} />
+          )}
           {c.companyName && c.logo && (
             <div style={{ fontSize: 14, color: "#8a7d65", fontFamily: "sans-serif", marginBottom: 4 }}>{c.companyName}</div>
+          )}
+          {c.companyName && !c.logo && (
+            <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 4 }}>{c.companyName}</div>
           )}
           {c.contactName && <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.contactName}</div>}
           {c.phone && <div style={{ fontSize: 13, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.phone}</div>}
