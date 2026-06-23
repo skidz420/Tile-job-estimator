@@ -1825,8 +1825,8 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
-          "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing
-          "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help
+          "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing",
+          "v1.1.1 — Tab bar now scrolls horizontally on mobile — swipe to reach History and Help",
           "v1.1.0 — Job Notes, Estimate History, Install Banner, unsaved settings warning, empty state nudge, scroll to results, haptic feedback, send button loading state, Itemized vs Basic estimate style toggle",
           "v1.0.1 — Install banner guides Android and iOS users through adding app to home screen",
           "v1.0.0 — Progressive Web App: install to home screen, works fully offline; custom TJE icon; service worker caches all assets",
