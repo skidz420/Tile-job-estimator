@@ -86,9 +86,10 @@ function consumableCost(c, area) {
 }
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
-function SettingsPage({ settings, onSave }) {
+function SettingsPage({ settings, onSave, onExport, onImport }) {
   const [s, setS] = useState(() => JSON.parse(JSON.stringify(settings)));
   const [tab, setTab] = useState("contractor");
+  const importRef = useRef(null);
 
   function setField(k, v) { setS(p => ({ ...p, [k]: v })); }
 
@@ -376,6 +377,50 @@ function SettingsPage({ settings, onSave }) {
           letterSpacing: 2, textTransform: "uppercase", fontFamily: "sans-serif",
           boxShadow: "0 4px 24px rgba(193,151,72,0.3)",
         }}>Save Settings</button>
+
+        {/* ── Backup / Restore ── */}
+        <div style={{ marginTop: 16, padding: "14px 16px", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>
+            Backup & Restore
+          </div>
+          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 12, fontStyle: "italic" }}>
+            Export saves all your settings to a JSON file. Import restores from a previously exported backup.
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => onExport(s)} style={{
+              flex: 1, padding: "11px 0",
+              background: "#1a1610", border: "1px solid #3a3020",
+              borderRadius: 8, cursor: "pointer",
+              color: "#c19748", fontSize: 13, fontWeight: 600,
+              fontFamily: "sans-serif", letterSpacing: 1,
+              transition: "border-color 0.15s",
+            }}>⬇ Export Backup</button>
+            <button onClick={() => importRef.current?.click()} style={{
+              flex: 1, padding: "11px 0",
+              background: "#1a1610", border: "1px solid #3a3020",
+              borderRadius: 8, cursor: "pointer",
+              color: "#c19748", fontSize: 13, fontWeight: 600,
+              fontFamily: "sans-serif", letterSpacing: 1,
+              transition: "border-color 0.15s",
+            }}>⬆ Import Backup</button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".json"
+              style={{ display: "none" }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                  onImport(ev.target.result, loaded => setS(loaded));
+                };
+                reader.readAsText(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -463,6 +508,46 @@ export default function TileEstimator() {
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
   }
 
+  function handleExport(s) {
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+    const filename = `tje-backup-${stamp}.json`;
+    const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImport(jsonText, onLoaded) {
+    try {
+      const parsed = JSON.parse(jsonText);
+      // Basic validation — must have at least one known top-level key
+      if (!parsed || typeof parsed !== "object" || (!parsed.tiles && !parsed.consumables && !parsed.contractor)) {
+        alert("This doesn't look like a valid Tile Job Estimator backup file.");
+        return;
+      }
+      const merged = {
+        miscPercent: 3, defaultMarkup: 40,
+        consumables: SEED_CONSUMABLES,
+        tiles: SEED_TILES,
+        services: SEED_SERVICES,
+        contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
+        estimateNumber: 1,
+        defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
+        ...parsed,
+      };
+      try { localStorage.setItem("tje_settings", JSON.stringify(merged)); } catch (e) {}
+      setSettings(merged);
+      setMarkupPercent(nv(merged.defaultMarkup, 40));
+      onLoaded(merged);
+      setSavedMsg(true);
+      setTimeout(() => setSavedMsg(false), 2000);
+    } catch (e) {
+      alert("Failed to read backup file. Make sure it's a valid JSON export from this app.");
+    }
+  }
+
   const tile         = settings.tiles.find(t => t.id === selectedTileId);
   const area         = nv(sqft);
   const laborRate    = nv(tile?.labor);
@@ -537,7 +622,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.1</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v0.3.2</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -557,7 +642,7 @@ export default function TileEstimator() {
         </div>
       </div>
 
-      {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} />
+      {page === "settings" ? <SettingsPage settings={settings} onSave={handleSaveSettings} onExport={handleExport} onImport={handleImport} />
       : page === "help"     ? <HelpPage />
       : (
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
@@ -1319,6 +1404,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v0.3.2 — Added Export & Import backup buttons to Settings — save all settings to a JSON file and restore from any previous backup",
           "v0.3.1 — Settings now persist across sessions — contractor info, tile types, services, and estimate number all saved to device storage",
           "v0.3.0 — Customer-facing estimates: removed true cost and internal rates; all line items show marked-up customer prices only",
           "v0.2.9 — Fully itemized estimates: every line item broken out with quantities and unit prices",
@@ -1354,7 +1440,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v0.3.1 — Tile Job Estimator · Built for tile contractors
+        v0.3.2 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
