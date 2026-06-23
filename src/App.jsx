@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 
 // ─── IndexedDB Database Layer ─────────────────────────────────────────────────
 const DB_NAME = "tje_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -17,6 +17,11 @@ function openDB() {
       if (!db.objectStoreNames.contains("customers")) {
         const cs = db.createObjectStore("customers", { keyPath: "id" });
         cs.createIndex("name", "name");
+      }
+      if (!db.objectStoreNames.contains("drafts")) {
+        const ds = db.createObjectStore("drafts", { keyPath: "id" });
+        ds.createIndex("date", "date");
+        ds.createIndex("customerName", "customerName");
       }
     };
     req.onsuccess = e => resolve(e.target.result);
@@ -835,46 +840,59 @@ function CustomersPage({ customers, estimates, onSave, onDelete }) {
 }
 
 // ─── History Page ─────────────────────────────────────────────────────────────
-function HistoryPage({ estimateHistory, customers, settings, onClear, onUpdate, onDelete }) {
+function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, onUpdate, onDelete, onLoad, onDeleteDraft, onLoadDraft, onSendDraft }) {
+  const [view, setView]         = useState("sent");
   const [search, setSearch]     = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [editingId, setEditingId]   = useState(null);
   const [editForm, setEditForm]     = useState({});
   const [resendId, setResendId]     = useState(null);
   const [resendMode, setResendMode] = useState("email");
+  const [sendingDraftId, setSendingDraftId] = useState(null);
+  const [draftSendMode, setDraftSendMode]   = useState("email");
 
   const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? estimateHistory.filter(e =>
-        (e.customerName||"").toLowerCase().includes(q) ||
-        (e.projectDesc||"").toLowerCase().includes(q) ||
-        (e.tileName||"").toLowerCase().includes(q)
-      )
-    : estimateHistory;
+  const filtered = (view === "sent" ? estimateHistory : drafts).filter(e =>
+    !q ||
+    (e.customerName||"").toLowerCase().includes(q) ||
+    (e.projectDesc||"").toLowerCase().includes(q) ||
+    (e.tileName||"").toLowerCase().includes(q)
+  );
 
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
+
+      {/* Sent / Drafts toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 16, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden" }}>
+        {[["sent", `Sent (${estimateHistory.length})`], ["drafts", `Drafts (${(drafts||[]).length})`]].map(([key, label]) => (
+          <button key={key} onClick={() => { setView(key); setSearch(""); setExpandedId(null); }} style={{
+            flex: 1, padding: "10px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
+            fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase",
+            background: view === key ? "#1a1710" : "transparent",
+            color: view === key ? "#c19748" : "#5a4f38",
+            borderBottom: view === key ? "2px solid #c19748" : "2px solid transparent",
+            transition: "all 0.15s",
+          }}>{label}</button>
+        ))}
+      </div>
+
       {/* Search bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
         <span style={{ color: "#4a4030", fontSize: 14 }}>🔍</span>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by customer, project, or tile type…"
-          style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }}
-        />
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={`Search ${view === "sent" ? "sent estimates" : "drafts"}…`}
+          style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }} />
         {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "#5a4f38", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>
-          {q ? `${filtered.length} of ${estimateHistory.length} estimates` : `${estimateHistory.length} estimate${estimateHistory.length !== 1 ? "s" : ""}`}
+          {filtered.length} {view === "sent" ? "estimate" : "draft"}{filtered.length !== 1 ? "s" : ""}
         </div>
-        {estimateHistory.length > 0 && (
-          <button onClick={() => {
-            if (window.confirm("Clear all estimate history? This cannot be undone.")) onClear();
-          }} style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
+        {view === "sent" && estimateHistory.length > 0 && (
+          <button onClick={() => { if (window.confirm("Clear all sent estimate history?")) onClear(); }}
+            style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
             Clear History
           </button>
         )}
@@ -882,11 +900,95 @@ function HistoryPage({ estimateHistory, customers, settings, onClear, onUpdate, 
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
-          <div style={{ fontSize: 14 }}>{q ? "No estimates match your search." : "No estimates sent yet."}</div>
-          {!q && <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>Estimates appear here after you send them to a customer.</div>}
+          <div style={{ fontSize: 36, marginBottom: 12 }}>{view === "sent" ? "📋" : "💾"}</div>
+          <div style={{ fontSize: 14 }}>{q ? "No results match your search." : view === "sent" ? "No estimates sent yet." : "No drafts saved yet."}</div>
+          {!q && view === "drafts" && <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>After calculating, tap 💾 Save Draft to save here.</div>}
         </div>
-      ) : filtered.map(e => {
+      ) : view === "drafts" ? filtered.map(d => {
+        const isExpanded = expandedId === d.id;
+        const isSending = sendingDraftId === d.id;
+        return (
+          <div key={d.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#6dc47a" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
+            <div onClick={() => setExpandedId(isExpanded ? null : d.id)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", cursor: "pointer" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: "#6dc47a", fontFamily: "sans-serif", fontWeight: 700, flexShrink: 0 }}>{d.draftNum}</span>
+                  <span style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{d.customerName || "No customer"}</span>
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {d.projectDesc && <span style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif" }}>{d.projectDesc}</span>}
+                  <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{d.tileName}{d.sqft ? " · " + d.sqft + " sqft" : ""}</span>
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 16, color: "#e8c870", fontFamily: "sans-serif", fontWeight: 600 }}>{fmt(d.totalPrice)}</div>
+                <div style={{ fontSize: 11, color: "#3a3020", fontFamily: "sans-serif", marginTop: 2 }}>{d.date}</div>
+              </div>
+              <span style={{ color: "#3a3020", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
+            </div>
+            {isExpanded && (
+              <div style={{ borderTop: "1px solid #2e2518" }}>
+                <div style={{ display: "flex", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
+                  <button onClick={e2 => { e2.stopPropagation(); setSendingDraftId(isSending ? null : d.id); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #c19748",
+                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>{isSending ? "✕ Cancel" : "✉ Send"}</button>
+                  <button onClick={e2 => { e2.stopPropagation(); onLoadDraft(d); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                    borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>↑ Load & Edit</button>
+                  <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this draft?")) onDeleteDraft(d.id); }} style={{
+                    padding: "8px 12px", background: "none", border: "1px solid #3a2518",
+                    borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
+                  }}>✕</button>
+                </div>
+                {isSending && (
+                  <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      {["email", "text"].map(mode => (
+                        <button key={mode} onClick={() => setDraftSendMode(mode)} style={{
+                          flex: 1, padding: "8px", borderRadius: 6, cursor: "pointer",
+                          border: `1px solid ${draftSendMode === mode ? "#c19748" : "#2e2518"}`,
+                          background: draftSendMode === mode ? "#1e1a10" : "#13110d",
+                          color: draftSendMode === mode ? "#c19748" : "#5a4f38",
+                          fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                        }}>{mode === "email" ? "✉ Email" : "💬 Text"}</button>
+                      ))}
+                    </div>
+                    <button onClick={() => {
+                      const subject = "Tile Installation Estimate" + (d.customerName ? " — " + d.customerName : "");
+                      const body = `${d.customerName ? "Hi " + d.customerName.split(" ")[0] + ",\n\n" : ""}Here is your tile installation estimate for ${d.sqft} sqft${d.projectDesc ? " — " + d.projectDesc : ""}.\n\nTotal: ${fmt(d.totalPrice)}\n\n${settings?.contractor?.contactName || ""}\n${settings?.contractor?.phone || ""}`;
+                      if (draftSendMode === "email") {
+                        const to = d.customerEmail ? encodeURIComponent(d.customerEmail) : "";
+                        window.open("mailto:" + to + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
+                      } else {
+                        const to = d.customerPhone ? d.customerPhone.replace(/\D/g, "") : "";
+                        window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
+                      }
+                      onSendDraft(d, draftSendMode === "email" ? body : "", draftSendMode === "text" ? body : "");
+                      setSendingDraftId(null); setExpandedId(null);
+                    }} style={{
+                      width: "100%", padding: "10px", background: "#1e1608",
+                      border: "1px solid #c19748", borderRadius: 6, cursor: "pointer",
+                      color: "#c19748", fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
+                    }}>{draftSendMode === "email" ? "Open in Mail App →" : "Open in Messages App →"}</button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Draft Details</div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    {d.customerEmail && <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{d.customerEmail}</span>}
+                    {d.customerPhone && <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{d.customerPhone}</span>}
+                    <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{d.sqft} sqft · {d.tileName}</span>
+                    {d.jobNotes && <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>{d.jobNotes}</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }) : filtered.map(e => {
         const isExpanded = expandedId === e.id;
         const isResending = resendId === e.id;
         const isEditing = editingId === e.id;
@@ -923,6 +1025,10 @@ function HistoryPage({ estimateHistory, customers, settings, onClear, onUpdate, 
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>{isResending ? "✕ Cancel" : "↩ Resend"}</button>
+                  <button onClick={e2 => { e2.stopPropagation(); onLoad(e); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                    borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>↑ Load into Estimator</button>
                   <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
                     borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
@@ -1295,6 +1401,65 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
   );
 }
 
+// ─── Version Check Banner ─────────────────────────────────────────────────────
+const APP_VERSION = "1.4.0";
+
+function UpdateBanner() {
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  useState(() => {
+    // Fetch version.json bypassing cache to check for updates
+    fetch("/version.json?t=" + Date.now(), { cache: "no-store" })
+      .then(r => r.json())
+      .then(data => {
+        if (data.version && data.version !== APP_VERSION) {
+          setUpdateAvailable(true);
+        }
+      })
+      .catch(() => {});
+  });
+
+  if (!updateAvailable) return null;
+
+  function handleRefresh() {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        Promise.all(regs.map(r => r.unregister())).then(() => {
+          caches.keys().then(keys => {
+            Promise.all(keys.map(k => caches.delete(k))).then(() => {
+              window.location.reload(true);
+            });
+          });
+        });
+      });
+    } else {
+      window.location.reload(true);
+    }
+  }
+
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #1a1208, #0f0d06)",
+      borderBottom: "2px solid #c19748",
+      padding: "10px 16px",
+      display: "flex", alignItems: "center", gap: 10,
+      fontFamily: "sans-serif",
+    }}>
+      <span style={{ fontSize: 16, flexShrink: 0 }}>🆕</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: "#c19748", fontWeight: 700 }}>Update available</div>
+        <div style={{ fontSize: 11, color: "#5a4f38", marginTop: 1 }}>A new version of Tile Job Estimator is ready.</div>
+      </div>
+      <button onClick={handleRefresh} style={{
+        background: "linear-gradient(135deg, #c19748, #a07830)",
+        border: "none", borderRadius: 6, padding: "8px 14px",
+        cursor: "pointer", color: "#0f0f0f", fontSize: 12, fontWeight: 700,
+        letterSpacing: 1, whiteSpace: "nowrap", flexShrink: 0,
+      }}>Refresh</button>
+    </div>
+  );
+}
+
 export default function TileEstimator() {
   const [page, setPage] = useState("estimate");
   const [settings, setSettings] = useState(() => {
@@ -1333,6 +1498,12 @@ export default function TileEstimator() {
   const [tilePriceSqFt, setTilePriceSqFt]   = useState("");
   const [wastePercent, setWastePercent]     = useState("10");
   const [jobNotes, setJobNotes]             = useState("");
+  const [customerName, setCustomerName]     = useState("");
+  const [customerEmail, setCustomerEmail]   = useState("");
+  const [customerPhone, setCustomerPhone]   = useState("");
+  const [projectDesc, setProjectDesc]       = useState("");
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [newCustForm, setNewCustForm]       = useState({ name: "", email: "", phone: "" });
   // serviceState: { [serviceId]: { enabled, overrides: { [consumableId]: costOverride } } }
   const [serviceState, setServiceState]     = useState({});
   const [markupMode, setMarkupMode]         = useState("percent");
@@ -1349,15 +1520,17 @@ export default function TileEstimator() {
     } catch (e) { return false; }
   });
   const [estimateHistory, setEstimateHistory] = useState([]);
+  const [drafts, setDrafts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [dbReady, setDbReady] = useState(false);
   const resultRef = useRef(null);
 
   // Load from IndexedDB on mount
   useState(() => {
-    Promise.all([dbGetAll("estimates"), dbGetAll("customers")]).then(([ests, custs]) => {
-      setEstimateHistory(ests.sort((a, b) => new Date(b.date) - new Date(a.date)));
+    Promise.all([dbGetAll("estimates"), dbGetAll("customers"), dbGetAll("drafts")]).then(([ests, custs, drs]) => {
+      setEstimateHistory(ests.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
       setCustomers(custs.sort((a, b) => (a.name||"").localeCompare(b.name||"")));
+      setDrafts(drs.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
       setDbReady(true);
     }).catch(() => setDbReady(true));
   });
@@ -1437,12 +1610,68 @@ export default function TileEstimator() {
     });
   }
 
+  function saveDraft() {
+    const draftCounter = parseInt(localStorage.getItem("tje_draft_number") || "0") + 1;
+    localStorage.setItem("tje_draft_number", String(draftCounter));
+    const draftNum = "D-" + String(draftCounter).padStart(4, "0");
+    const record = {
+      id: uid(),
+      draftNum,
+      date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
+      dateISO: new Date().toISOString(),
+      customerName: customerName || "",
+      customerEmail: customerEmail || "",
+      customerPhone: customerPhone || "",
+      projectDesc: projectDesc || "",
+      totalPrice: customerPrice,
+      sqft: area,
+      tileId: selectedTileId,
+      tileName: tile?.name || "",
+      tilePriceSqFt: tilePriceSqFt || "",
+      wastePercent: wastePercent || "10",
+      serviceState: JSON.parse(JSON.stringify(serviceState)),
+      markupMode,
+      markupPercent,
+      jobNotes: jobNotes || "",
+      emailText: "",
+      smsText: "",
+      status: "draft",
+    };
+    dbPut("drafts", record).then(() => {
+      setDrafts(prev => [record, ...prev]);
+    });
+    return draftNum;
+  }
+
+  function deleteDraft(id) {
+    dbDelete("drafts", id).then(() => {
+      setDrafts(prev => prev.filter(d => d.id !== id));
+    });
+  }
+
+  function sendDraft(draft, emailText, smsText) {
+    // Assign real estimate number
+    const estNum = String(settings.estimateNumber || 1).padStart(4, "0");
+    setSettings(p => {
+      const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
+      try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+    // Save to estimates
+    const record = { ...draft, estNum, draftNum: draft.draftNum, emailText, smsText, status: "sent", sentDate: new Date().toISOString() };
+    dbPut("estimates", record).then(() => {
+      setEstimateHistory(prev => [record, ...prev]);
+    });
+    // Remove from drafts
+    deleteDraft(draft.id);
+  }
+
   function handleExport(s) {
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
     const filename = `tje-backup-${stamp}.json`;
-    Promise.all([dbGetAll("estimates"), dbGetAll("customers")]).then(([ests, custs]) => {
-      const backup = { settings: s, estimates: ests, customers: custs, version: "1.3.0", exportDate: now.toISOString() };
+    Promise.all([dbGetAll("estimates"), dbGetAll("customers"), dbGetAll("drafts")]).then(([ests, custs, drs]) => {
+      const backup = { settings: s, estimates: ests, customers: custs, drafts: drs, version: "1.4.0", exportDate: now.toISOString() };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1490,6 +1719,14 @@ export default function TileEstimator() {
         dbClear("customers").then(() => {
           Promise.all(parsed.customers.map(c => dbPut("customers", c))).then(() => {
             setCustomers(parsed.customers.sort((a, b) => (a.name||"").localeCompare(b.name||"")));
+          });
+        });
+      }
+      // Restore drafts
+      if (parsed.drafts && Array.isArray(parsed.drafts)) {
+        dbClear("drafts").then(() => {
+          Promise.all(parsed.drafts.map(d => dbPut("drafts", d))).then(() => {
+            setDrafts(parsed.drafts.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
           });
         });
       }
@@ -1570,14 +1807,36 @@ export default function TileEstimator() {
   }
   function resetEstimate() {
     setSqft(""); setSelectedTileId(null); setTilePriceSqFt(""); setWastePercent("10");
-    setJobNotes(""); setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
+    setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
+    setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function loadEstimate(record) {
+    setSqft(String(record.sqft || ""));
+    setSelectedTileId(record.tileId || null);
+    setTilePriceSqFt(String(record.tilePriceSqFt || ""));
+    setWastePercent(String(record.wastePercent || "10"));
+    setJobNotes(record.jobNotes || "");
+    setCustomerName(record.customerName || "");
+    setCustomerEmail(record.customerEmail || "");
+    setCustomerPhone(record.customerPhone || "");
+    setProjectDesc(record.projectDesc || "");
+    setServiceState(record.serviceState || {});
+    setMarkupMode(record.markupMode || "percent");
+    setMarkupPercent(record.markupPercent || nv(settings.defaultMarkup, 40));
+    setManualPrice("");
+    setShowBreakdown(false);
+    setPage("estimate");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f0f0f", color: "#f0ede6", fontFamily: "'Georgia','Times New Roman',serif" }}>
       <style>{`.tje-tabs::-webkit-scrollbar { display: none; }`}</style>
+
+      <UpdateBanner />
 
       {/* Customer Presentation Overlay */}
       {showPresentation && (
@@ -1629,7 +1888,7 @@ export default function TileEstimator() {
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.3.0</div>
+            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.4.0</div>
           </div>
           <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
             Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
@@ -1671,16 +1930,86 @@ export default function TileEstimator() {
       : page === "history"  ? (
         <HistoryPage
           estimateHistory={estimateHistory}
+          drafts={drafts}
           customers={customers}
           settings={settings}
           onClear={() => { dbClear("estimates").then(() => setEstimateHistory([])); }}
           onUpdate={updateEstimateRecord}
           onDelete={deleteEstimateRecord}
+          onLoad={loadEstimate}
+          onDeleteDraft={deleteDraft}
+          onLoadDraft={loadEstimate}
+          onSendDraft={sendDraft}
         />
       )
       : page === "help"     ? <HelpPage />
       : (
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
+
+          {/* 00 — Customer */}
+          <Section label="00" title="Customer">
+            {/* Customer picker */}
+            {customers.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <select
+                  value={customerName}
+                  onChange={e => {
+                    const selected = customers.find(c => c.name === e.target.value);
+                    if (selected) {
+                      setCustomerName(selected.name || "");
+                      setCustomerEmail(selected.email || "");
+                      setCustomerPhone(selected.phone || "");
+                    } else {
+                      setCustomerName(""); setCustomerEmail(""); setCustomerPhone("");
+                    }
+                  }}
+                  style={{ ...inputStyle, cursor: "pointer" }}
+                >
+                  <option value="">— Select existing customer —</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.name}>{c.name}{c.phone ? "  •  " + c.phone : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Customer fields */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Name</div>
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+                  placeholder="Sarah & Tom Williams" style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Project Description</div>
+                <input value={projectDesc} onChange={e => setProjectDesc(e.target.value)}
+                  placeholder="Master Bath Floor & Shower" style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Email</div>
+                <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)}
+                  placeholder="sarah@email.com" style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Phone</div>
+                <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
+                  placeholder="(555) 867-5309" style={inputStyle} />
+              </div>
+            </div>
+
+            {/* Save as new customer */}
+            {customerName && !customers.find(c => c.name.toLowerCase() === customerName.toLowerCase()) && (
+              <button onClick={() => {
+                saveCustomer({ name: customerName, email: customerEmail, phone: customerPhone });
+              }} style={{
+                padding: "7px 14px", background: "none", border: "1px solid #3a3020",
+                borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12,
+                fontFamily: "sans-serif", marginTop: 2,
+              }}>+ Save as new customer</button>
+            )}
+          </Section>
 
           {/* 01 */}
           <Section label="01" title="Square Footage">
@@ -1952,8 +2281,11 @@ export default function TileEstimator() {
                 markupMode={markupMode}
                 markupPercent={markupPercent}
                 jobNotes={jobNotes}
-                customers={customers}
-                onEstimateSent={(customerName, customerEmail, customerPhone, projectDesc, emailText, smsText) => {
+                customerName={customerName}
+                customerEmail={customerEmail}
+                customerPhone={customerPhone}
+                projectDesc={projectDesc}
+                onEstimateSent={(emailText, smsText) => {
                   setSettings(p => {
                     const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
                     try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
@@ -1971,6 +2303,14 @@ export default function TileEstimator() {
                 border: "1px solid #c19748", borderRadius: 8, cursor: "pointer",
                 color: "#c19748", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
               }}>👁 Show Customer</button>
+              <button onClick={() => {
+                const draftNum = saveDraft();
+                alert(`Draft ${draftNum} saved. Find it in the History tab under Drafts.`);
+              }} style={{
+                width: "100%", padding: "14px", marginBottom: 10, background: "transparent",
+                border: "1px solid #3a7a4a", borderRadius: 8, cursor: "pointer",
+                color: "#6dc47a", fontSize: 14, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
+              }}>💾 Save Draft</button>
               <button onClick={resetEstimate} style={{
                 width: "100%", padding: "14px", background: "transparent",
                 border: "1px solid #2e2518", borderRadius: 8, cursor: "pointer",
@@ -1988,20 +2328,15 @@ export default function TileEstimator() {
 // ─── Send Estimate ───────────────────────────────────────────
 function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqFt,
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
-  markupMode, markupPercent, jobNotes, customers, onEstimateSent }) {
+  markupMode, markupPercent, jobNotes, customerName, customerEmail, customerPhone,
+  projectDesc, onEstimateSent }) {
 
   const [showPreview, setShowPreview]     = useState(false);
   const [sendMode, setSendMode]           = useState(null);
   const [estimateStyle, setEstimateStyle] = useState("itemized");
   const [terms, setTerms]                 = useState(settings.defaultTerms || "");
-  const [customerName, setCustomerName]   = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [projectDesc, setProjectDesc]     = useState("");
   const [sent, setSent]                   = useState(false);
   const [sending, setSending]             = useState(false);
-  const [showPicker, setShowPicker]       = useState(false);
-  const [pickerSearch, setPickerSearch]   = useState("");
 
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const c       = settings.contractor || {};
@@ -2389,7 +2724,7 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       const to = customerPhone ? customerPhone.replace(/\D/g, "") : "";
       window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
     }
-    onEstimateSent(customerName, customerEmail, customerPhone, projectDesc, emailText, smsText);
+    onEstimateSent(emailText, smsText);
     setSending(false);
     setSent(true);
     setTimeout(() => setSent(false), 3000);
@@ -2450,69 +2785,15 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         </div>
       </div>
 
-      {/* Customer Picker */}
-      {customers && customers.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <button onClick={() => setShowPicker(p => !p)} style={{
-            width: "100%", padding: "9px 12px", background: "#0f0d0a",
-            border: "1px solid #3a2e1a", borderRadius: 6, cursor: "pointer",
-            color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", textAlign: "left", display: "flex", justifyContent: "space-between",
-          }}>
-            <span>👥 {customerName ? `Selected: ${customerName}` : "Select from customers…"}</span>
-            <span>{showPicker ? "▲" : "▼"}</span>
-          </button>
-          {showPicker && (
-            <div style={{ background: "#0a0907", border: "1px solid #2e2518", borderRadius: "0 0 6px 6px", borderTop: "none", maxHeight: 200, overflowY: "auto" }}>
-              <div style={{ padding: "8px 10px", borderBottom: "1px solid #1e1a12" }}>
-                <input value={pickerSearch} onChange={e => setPickerSearch(e.target.value)}
-                  placeholder="Search customers…"
-                  style={{ ...iStyle, fontSize: 12, padding: "5px 8px" }} />
-              </div>
-              {customers.filter(c => !pickerSearch || (c.name||"").toLowerCase().includes(pickerSearch.toLowerCase())).map(c => (
-                <div key={c.id} onClick={() => {
-                  setCustomerName(c.name || "");
-                  setCustomerEmail(c.email || "");
-                  setCustomerPhone(c.phone || "");
-                  setShowPicker(false);
-                  setPickerSearch("");
-                }} style={{
-                  padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #1a1710",
-                  background: customerName === c.name ? "rgba(193,151,72,0.08)" : "transparent",
-                }}>
-                  <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif" }}>{c.name}</div>
-                  {c.email && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.email}</div>}
-                  {c.phone && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.phone}</div>}
-                </div>
-              ))}
-            </div>
-          )}
+      {/* Customer summary — read only in send panel */}
+      {(customerName || projectDesc) && (
+        <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 14px", marginBottom: 14 }}>
+          {customerName && <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{customerName}</div>}
+          {projectDesc && <div style={{ fontSize: 12, color: "#8a7d65", fontFamily: "sans-serif", marginTop: 2 }}>{projectDesc}</div>}
+          {customerEmail && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{customerEmail}</div>}
+          {customerPhone && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{customerPhone}</div>}
         </div>
       )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <div>
-          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Name</div>
-          <input value={customerName} onChange={e => setCustomerName(e.target.value)}
-            placeholder="Sarah & Tom Williams" style={iStyle} />
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Email</div>
-          <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)}
-            placeholder="sarah@email.com" style={iStyle} />
-        </div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Customer Phone</div>
-          <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
-            placeholder="(555) 867-5309" style={iStyle} />
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Project Description</div>
-          <input value={projectDesc} onChange={e => setProjectDesc(e.target.value)}
-            placeholder="Master Bath Floor & Shower" style={iStyle} />
-        </div>
-      </div>
 
       {sendMode === "email" && (
         <div style={{ marginBottom: 14 }}>
@@ -2774,7 +3055,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.3.0 — Tile Job Estimator · Built for tile contractors
+        v1.4.0 — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
