@@ -1,23 +1,25 @@
 # Changelog
 
+## [0.3.3] - 2026-06-22
+### Added
+- **Material categories** — each consumable now has a category (Adhesives, Grout & Finishing, Substrate & Backer, Waterproofing, Leveling System, Sealers, Fasteners & Hardware, Substrate Prep, Other)
+- **Grouped checklist material picker** — Services tab now uses a collapsible panel with materials organized by category instead of a flat bubble row
+- **Search within material picker** — type to filter materials in real time; category headers hide during search for a clean flat list; clear button to reset
+
 ## [0.3.2] - 2026-06-22
 ### Added
-- **Export Backup** — downloads all settings (consumables, tile types, services, contractor info, rates, terms) as a timestamped JSON file
-- **Import Backup** — restores settings from any previously exported JSON backup file; merges with defaults so new fields are always present
+- **Export Backup** — downloads all settings as a timestamped JSON file
+- **Import Backup** — restores settings from any previously exported JSON backup file
 - Both buttons live at the bottom of the Settings page under a "Backup & Restore" section
 
 ## [0.3.1] - 2026-05-31
 ### Fixed
-- **Settings not persisting** — all settings were stored in React state only and wiped on every page refresh
 - Settings now saved to device localStorage on every Save Settings tap
-- Contractor info, consumables, tile types, services, misc %, default markup, default terms, and estimate number all survive page refreshes and app restarts
-- Estimate number also persists when it auto-increments after sending
-- On first load, saved settings are merged with defaults so new fields added in future updates always exist without wiping existing data
+- All settings survive page refreshes and app restarts
 
 ## [0.3.0] - 2026-05-31
 ### Changed
 - Customer-facing estimates — removed true cost, internal rates, and profit info
-- All line items now show marked-up customer prices; lines add up exactly to the customer total
 
 ## [0.2.9] - 2026-05-31
 ### Changed
