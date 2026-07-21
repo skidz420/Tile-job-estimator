@@ -1,4 +1,44 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef, Component } from "react";
+
+// ─── Error Boundary ────────────────────────────────────────────────────────────
+export class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    console.error("Tile Job Estimator crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#0f0f0f", color: "#f5f0e8",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 32, fontFamily: "sans-serif", textAlign: "center",
+        }}>
+          <div style={{ maxWidth: 420 }}>
+            <div style={{ fontSize: 15, color: "#c19748", fontWeight: 700, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+              Something went wrong
+            </div>
+            <div style={{ fontSize: 13, color: "#8a7d5e", lineHeight: 1.6, marginBottom: 20 }}>
+              The app hit an unexpected error and needs to reload. Your saved estimates and settings are safe — they're stored on this device and won't be lost.
+            </div>
+            <button onClick={() => window.location.reload()} style={{
+              padding: "12px 24px", background: "linear-gradient(135deg,#c19748,#a07830)",
+              border: "none", borderRadius: 8, cursor: "pointer", color: "#0f0f0f",
+              fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase",
+            }}>Reload App</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── IndexedDB Database Layer ─────────────────────────────────────────────────
 const DB_NAME = "tje_db";
@@ -292,9 +332,16 @@ function MaterialPicker({ consumables, assignedIds, onToggle }) {
 }
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
+const SETTINGS_MENU = [
+  { key: "contractor",  label: "Contractor Info",     desc: "Your business name, logo & contact details" },
+  { key: "consumables", label: "Consumables & Rates",  desc: "Thinset, grout, labor rates & waste factor" },
+  { key: "tiles",       label: "Tile Types",           desc: "Saved tile products & pricing" },
+  { key: "services",    label: "Services",             desc: "Add-on services you offer customers" },
+];
+
 function SettingsPage({ settings, onSave, onExport, onImport }) {
   const [s, setS] = useState(() => JSON.parse(JSON.stringify(settings)));
-  const [tab, setTab] = useState("contractor");
+  const [tab, setTab] = useState(null);
   const importRef = useRef(null);
 
   function setField(k, v) { setS(p => ({ ...p, [k]: v })); }
@@ -327,25 +374,31 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
     })}));
   }
 
-  const subTab = (key, label) => (
-    <button onClick={() => setTab(key)} style={{
-      padding: "8px 14px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
-      fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase",
-      background: "transparent",
-      color: tab === key ? "#c19748" : "#5a4f38",
-      borderBottom: tab === key ? "2px solid #c19748" : "2px solid transparent",
-      transition: "all 0.15s", whiteSpace: "nowrap",
-    }}>{label}</button>
-  );
-
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
-      <div style={{ display: "flex", gap: 2, borderBottom: "1px solid #2e2518", marginBottom: 28, overflowX: "auto" }}>
-        {subTab("contractor",  "Contractor Info")}
-        {subTab("consumables", "Consumables & Rates")}
-        {subTab("tiles",       "Tile Types")}
-        {subTab("services",    "Services")}
-      </div>
+      {tab === null ? (
+        <div style={{ display: "grid", gap: 10, marginBottom: 28 }}>
+          {SETTINGS_MENU.map(item => (
+            <button key={item.key} onClick={() => setTab(item.key)} style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+              textAlign: "left", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8,
+              padding: "16px 18px", cursor: "pointer", fontFamily: "sans-serif",
+            }}>
+              <div>
+                <div style={{ fontSize: 14, color: "#f5f0e8", fontWeight: 700 }}>{item.label}</div>
+                <div style={{ fontSize: 12, color: "#5a4f38", marginTop: 3 }}>{item.desc}</div>
+              </div>
+              <span style={{ color: "#5a4f38", fontSize: 18 }}>›</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button onClick={() => setTab(null)} style={{
+          background: "none", border: "none", color: "#c19748", fontSize: 13, fontWeight: 700,
+          letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", padding: 0, marginBottom: 24,
+          fontFamily: "sans-serif", display: "flex", alignItems: "center", gap: 6,
+        }}>‹ Back to Settings</button>
+      )}
 
       {/* ── Contractor Info ── */}
       {tab === "contractor" && (
@@ -631,7 +684,12 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
               fontFamily: "sans-serif", letterSpacing: 1,
               transition: "border-color 0.15s",
             }}>⬇ Export Backup</button>
-            <button onClick={() => importRef.current?.click()} style={{
+            <button onClick={() => {
+              const ok = window.confirm(
+                "Importing a backup will REPLACE all current settings, estimates, and customers on this device with what's in the backup file.\n\nThis can't be undone. Continue?"
+              );
+              if (ok) importRef.current?.click();
+            }} style={{
               flex: 1, padding: "11px 0",
               background: "#1a1610", border: "1px solid #3a3020",
               borderRadius: 8, cursor: "pointer",
@@ -1402,12 +1460,12 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
-  useState(() => {
+  useEffect(() => {
     // Fetch version.json bypassing cache to check for updates
     fetch("/version.json?t=" + Date.now(), { cache: "no-store" })
       .then(r => r.json())
@@ -1417,7 +1475,7 @@ function UpdateBanner() {
         }
       })
       .catch(() => {});
-  });
+  }, []);
 
   if (!updateAvailable) return null;
 
@@ -1427,13 +1485,13 @@ function UpdateBanner() {
         Promise.all(regs.map(r => r.unregister())).then(() => {
           caches.keys().then(keys => {
             Promise.all(keys.map(k => caches.delete(k))).then(() => {
-              window.location.reload(true);
+              window.location.reload();
             });
           });
         });
       });
     } else {
-      window.location.reload(true);
+      window.location.reload();
     }
   }
 
@@ -1526,14 +1584,14 @@ export default function TileEstimator() {
   const resultRef = useRef(null);
 
   // Load from IndexedDB on mount
-  useState(() => {
+  useEffect(() => {
     Promise.all([dbGetAll("estimates"), dbGetAll("customers"), dbGetAll("drafts")]).then(([ests, custs, drs]) => {
       setEstimateHistory(ests.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
       setCustomers(custs.sort((a, b) => (a.name||"").localeCompare(b.name||"")));
       setDrafts(drs.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date)));
       setDbReady(true);
     }).catch(() => setDbReady(true));
-  });
+  }, []);
 
   function handleSaveSettings(s) {
     try { localStorage.setItem("tje_settings", JSON.stringify(s)); } catch (e) {}
@@ -1571,7 +1629,18 @@ export default function TileEstimator() {
       smsText: smsText || "",
     };
     dbPut("estimates", record).then(() => {
-      setEstimateHistory(prev => [record, ...prev].slice(0, 500));
+      setEstimateHistory(prev => {
+        const next = [record, ...prev].slice(0, 500);
+        // Also trim IndexedDB itself so it doesn't grow unbounded past the cap
+        if (prev.length + 1 > 500) {
+          dbGetAll("estimates").then(all => {
+            const sorted = all.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date));
+            const excess = sorted.slice(500);
+            excess.forEach(rec => dbDelete("estimates", rec.id));
+          }).catch(() => {});
+        }
+        return next;
+      });
     }).catch(() => {
       setEstimateHistory(prev => [record, ...prev].slice(0, 500));
     });
@@ -1671,7 +1740,8 @@ export default function TileEstimator() {
     const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
     const filename = `tje-backup-${stamp}.json`;
     Promise.all([dbGetAll("estimates"), dbGetAll("customers"), dbGetAll("drafts")]).then(([ests, custs, drs]) => {
-      const backup = { settings: s, estimates: ests, customers: custs, drafts: drs, version: "1.4.0", exportDate: now.toISOString() };
+      const draftCounter = parseInt(localStorage.getItem("tje_draft_number") || "0");
+      const backup = { settings: s, estimates: ests, customers: custs, drafts: drs, draftCounter, version: APP_VERSION, exportDate: now.toISOString() };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1705,6 +1775,11 @@ export default function TileEstimator() {
       setSettings(merged);
       setMarkupPercent(nv(merged.defaultMarkup, 40));
       onLoaded(merged);
+
+      // Restore draft counter (kept in localStorage, not IndexedDB)
+      if (typeof parsed.draftCounter === "number") {
+        try { localStorage.setItem("tje_draft_number", String(parsed.draftCounter)); } catch (e) {}
+      }
 
       // Restore estimates
       if (parsed.estimates && Array.isArray(parsed.estimates)) {
@@ -1833,9 +1908,7 @@ export default function TileEstimator() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0f0f0f", color: "#f0ede6", fontFamily: "'Georgia','Times New Roman',serif" }}>
-      <style>{`.tje-tabs::-webkit-scrollbar { display: none; }`}</style>
-
+    <div style={{ minHeight: "100vh", background: "#0f0f0f", color: "#f0ede6", fontFamily: "'Georgia','Times New Roman',serif", paddingBottom: 74 }}>
       <UpdateBanner />
 
       {/* Customer Presentation Overlay */}
@@ -1883,31 +1956,31 @@ export default function TileEstimator() {
       )}
 
       {/* Header */}
-      <div style={{ background: "linear-gradient(135deg,#1a1208,#0f0f0f)", borderBottom: "1px solid #3a2e1a", padding: "28px 32px 0", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: "linear-gradient(135deg,#1a1208,#0f0f0f)", borderBottom: "1px solid #3a2e1a", padding: "28px 32px 22px", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(193,151,72,0.03) 20px,rgba(193,151,72,0.03) 21px)", pointerEvents: "none" }} />
         <div style={{ position: "relative", maxWidth: 760, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
-            <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v1.4.0</div>
-          </div>
-          <h1 style={{ margin: 0, fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
-            Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
-          </h1>
-          <div className="tje-tabs" style={{ display: "flex", gap: 0, marginTop: 18, alignItems: "center", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            {[["estimate","Estimator"],["settings","⚙ Settings"],["customers","👥 Customers"],["history","📋 History"],["help","? Help"]].map(([key, label]) => (
-              <button key={key} onClick={() => {
-                if (key !== "settings" && page === "settings") setUnsavedWarning(true);
-                setPage(key);
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: 6, color: "#c19748", textTransform: "uppercase" }}>Professional Estimating Tool</div>
+              <h1 style={{ margin: "4px 0 0", fontSize: "clamp(22px,4vw,36px)", fontWeight: 400, color: "#f5f0e8", lineHeight: 1.1 }}>
+                Tile Job <span style={{ color: "#c19748", fontStyle: "italic" }}>Cost Estimator</span>
+              </h1>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0, paddingTop: 2 }}>
+              <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif", letterSpacing: 1 }}>v{APP_VERSION}</div>
+              <button onClick={() => {
+                if (page === "settings") setUnsavedWarning(true);
+                setPage("help");
               }} style={{
-                padding: "10px 22px", border: "none", cursor: "pointer", fontFamily: "sans-serif", flexShrink: 0,
-                fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", background: "transparent",
-                color: page === key ? "#c19748" : "#5a4f38",
-                borderBottom: page === key ? "2px solid #c19748" : "2px solid transparent",
-                transition: "all 0.15s",
-              }}>{label}</button>
-            ))}
-            {savedMsg && <div style={{ marginLeft: "auto", fontSize: 12, color: "#6dc47a", fontFamily: "sans-serif", paddingRight: 4 }}>✓ Settings saved</div>}
+                width: 32, height: 32, borderRadius: "50%", border: "1px solid #3a2e1a",
+                background: "rgba(193,151,72,0.08)", color: "#c19748", fontSize: 14, fontWeight: 700,
+                cursor: "pointer", fontFamily: "sans-serif", flexShrink: 0,
+              }}>?</button>
+            </div>
           </div>
+          {savedMsg && (
+            <div style={{ marginTop: 12, fontSize: 12, color: "#6dc47a", fontFamily: "sans-serif" }}>✓ Settings saved</div>
+          )}
           {unsavedWarning && page !== "settings" && (
             <div style={{ background: "#1e1408", border: "1px solid #c19748", borderRadius: 6, padding: "8px 14px", marginTop: 8, marginBottom: 4, display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
               <span style={{ fontSize: 12, color: "#c19748", flex: 1 }}>⚠ You left Settings without saving — changes were not applied.</span>
@@ -2320,6 +2393,40 @@ export default function TileEstimator() {
           )}
         </div>
       )}
+
+      {/* Bottom Navigation */}
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40,
+        display: "flex", background: "#1a1208", borderTop: "1px solid #3a2e1a",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}>
+        {[
+          ["estimate",  "📐", "Estimate"],
+          ["customers", "👥", "Customers"],
+          ["history",   "📋", "History"],
+          ["settings",  "⚙",  "Settings"],
+        ].map(([key, icon, label]) => {
+          const active = page === key;
+          return (
+            <button key={key} onClick={() => {
+              if (key !== "settings" && page === "settings") setUnsavedWarning(true);
+              setPage(key);
+            }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              padding: "10px 4px 8px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
+              background: active ? "rgba(193,151,72,0.10)" : "transparent",
+              borderTop: active ? "2px solid #c19748" : "2px solid transparent",
+              marginTop: -1,
+            }}>
+              <span style={{ fontSize: 19, filter: active ? "none" : "grayscale(35%) opacity(0.65)" }}>{icon}</span>
+              <span style={{
+                fontSize: 11, fontWeight: active ? 700 : 500, letterSpacing: 0.3,
+                color: active ? "#c19748" : "#8a7d5e",
+              }}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3011,6 +3118,8 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.5.0 — Redesigned navigation: bottom tab bar, Settings is now a drill-down menu, Help moved to a header button; fixed version display drift, mount-time effects now use useEffect, import now confirms before overwriting data, added a crash-recovery screen, draft counter included in backups, history cap now trims device storage too",
+          "v1.4.0 — (see CHANGELOG.md on GitHub for details of this release)",
           "v1.3.0 — IndexedDB storage, Customer database, customer email to mail, full input snapshots, editable history, backup includes estimates + customers",
           "v1.2.0 — Customer Presentation Mode, logo upload, History search + expand + resend, backup reminder, history cap raised to 500",
           "v1.1.2 — Warm, sales-friendly estimate format for both Basic and Itemized; uses customer first name; confident personal closing",
@@ -3055,7 +3164,7 @@ function HelpPage() {
       ))}
 
       <div style={{ marginTop: 32, padding: "16px 20px", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic", textAlign: "center" }}>
-        v1.4.0 — Tile Job Estimator · Built for tile contractors
+        v{APP_VERSION} — Tile Job Estimator · Built for tile contractors
       </div>
     </div>
   );
