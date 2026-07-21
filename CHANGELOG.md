@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.5.0] - 2026-07-21
+### Changed
+- **Navigation redesign** — main navigation moved from a horizontally-scrolling top tab bar to a fixed bottom tab bar (Estimate, Customers, History, Settings), sized for one-tap thumb reach
+- **Settings redesigned** — the four settings sections (Contractor Info, Consumables & Rates, Tile Types, Services) are now a drill-down menu instead of a cramped tab row; each section opens as its own full screen with a "Back to Settings" link
+- **Help moved** — Help is no longer a main tab; it's now a "?" button in the header
+### Fixed
+- Version number shown in the header, Help footer, and exported backups now always reflects the actual app version, instead of a hardcoded string that could drift out of sync
+- Two effects that ran during render (version-update check, initial IndexedDB load) now correctly run via `useEffect` after mount
+- Importing a backup now shows a confirmation warning before replacing existing settings, estimates, and customers
+- Added an error boundary so an unexpected crash shows a recovery screen instead of a blank app; local data is unaffected
+- The draft number counter is now included in backup exports/imports, so it survives a restore
+- The 500-estimate history cap now also trims old records out of IndexedDB, not just the in-memory list, so device storage no longer grows unbounded
+
+## [1.4.0] - 2026-06-23
+### Added
+- Customer section, send panel cleanup, drafts (save and load into the estimator), update-available banner
+- `version.json` added to support in-app update checks
+
+## [1.3.0] - 2026-06-23
+### Added
+- IndexedDB storage for estimates and customers (replacing localStorage for these)
+- Customer database with email/phone pre-fill
+- Full input snapshots saved per estimate; editable history
+- Customer Presentation mode now shows a full itemized breakdown
+
+## [1.2.0] - 2026-06-23
+### Added
+- Customer Presentation Mode
+- Company logo upload (with a default logo shown until one is set)
+- History search, expand, and resend
+- Backup reminder banner
+- History cap raised to 500 estimates
+
+## [1.1.2] - 2026-06-23
+### Changed
+- Warmer, more professional/sales-friendly estimate format that uses the customer's name
+
+## [1.1.1] - 2026-06-23
+### Fixed
+- Tab bar now scrolls horizontally on mobile so History and Help are reachable
+
 ## [1.1.0] - 2026-06-22
 ### Added
 - **Job Notes field** — free-text notes per estimate (scope, site conditions, customer requests); included when estimate is sent
