@@ -183,8 +183,8 @@ const CONSUMABLE_CATEGORIES = [
 ];
 
 const SEED_CONSUMABLES = [
-  { id: "thinset",    name: "Thinset / Mortar",        category: "Adhesives",           priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitLabel: "bag", unitCost: "",  note: "50 lb bag" },
-  { id: "grout",      name: "Grout",                   category: "Grout & Finishing",   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitLabel: "bag", unitCost: "",  note: "Varies by joint width" },
+  { id: "thinset",    name: "Thinset / Mortar",        category: "Adhesives",           priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitLabel: "bag", unitCost: "",  note: "50 lb bag", role: "thinset" },
+  { id: "grout",      name: "Grout",                   category: "Grout & Finishing",   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitLabel: "bag", unitCost: "",  note: "Varies by joint width", role: "grout" },
   { id: "backer",     name: "Cement Backer Board",     category: "Substrate & Backer",  priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.65, note: "" },
   { id: "membrane",   name: "Waterproof Membrane",     category: "Waterproofing",       priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.90, note: "" },
   { id: "memtape",    name: "Membrane Seam Tape",      category: "Waterproofing",       priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 18,   note: "Per roll" },
@@ -207,7 +207,16 @@ const SEED_SERVICES = [
   { id: "sealer_svc",  name: "Stone / Grout Sealer",  laborPerSqFt: 0.25, consumableIds: ["sealer"] },
 ];
 
+// Job Types: a named bundle of services with no cost of its own — a convenience preset.
+// Selecting one on the estimator auto-enables its serviceIds (same non-destructive behavior as tile serviceIds).
+const SEED_JOB_TYPES = [
+  { id: "kitchenfloor_jt", name: "Kitchen Floor", icon: "🍽️", serviceIds: ["subfloor_svc"], notes: "" },
+  { id: "backsplash_jt",   name: "Backsplash",    icon: "🖼️", serviceIds: [], notes: "" },
+  { id: "shower_jt",       name: "Shower",        icon: "🚿", serviceIds: ["membrane_svc", "demo_svc"], notes: "" },
+];
+
 const TILE_ICONS = ["⬜","🔲","🪨","◼","🔷","🟫","🟦","🟩","⬛","🔶","🔸","🔹"];
+const JOB_TYPE_ICONS = ["🍽️","🖼️","🚿","🛁","🧱","🏠","🪜","🧹","🔧","⬛","🟫","🔲"];
 const PRICE_TYPES = ["bag", "sqft", "flat"];
 const PRICE_TYPE_LABELS = { bag: "By Coverage (price + sqft covered)", sqft: "Per Sqft ($/sqft)", flat: "Flat ($/unit)" };
 const UNIT_LABEL_OPTIONS = ["bag", "box", "sheet", "roll", "bucket", "gallon", "case", "pail"];
@@ -222,9 +231,21 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 function fmt(n) { return (isNaN(n) || n == null) ? "$—" : n.toLocaleString("en-US", { style: "currency", currency: "USD" }); }
 function nv(v, fb = 0) { return parseFloat(v) || fb; }
 
+// Backfills the "role" field on consumables saved before it existed, so existing
+// installs keep working exactly as before until the contractor tags more brands.
+function migrateConsumableRoles(consumables) {
+  return (consumables || []).map(c => {
+    if (c.role) return c;
+    if (c.id === "thinset") return { ...c, role: "thinset" };
+    if (c.id === "grout")   return { ...c, role: "grout" };
+    return { ...c, role: c.role || null };
+  });
+}
+
 function newTile()        { return { id: uid(), name: "", icon: "⬜", labor: "", notes: "", serviceIds: [] }; }
-function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitLabel: "bag", coverageBasis: "area", applyWaste: false, useCustomWaste: false, wasteOverride: "", unitCost: "", note: "" }; }
+function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitLabel: "bag", coverageBasis: "area", applyWaste: false, useCustomWaste: false, wasteOverride: "", unitCost: "", note: "", role: null }; }
 function newService()     { return { id: uid(), name: "", laborPerSqFt: "", consumableIds: [] }; }
+function newJobType()     { return { id: uid(), name: "", icon: "🏠", serviceIds: [], notes: "" }; }
 
 // Units of a coverage-type material (bag/box/roll/etc) needed for a given sqft area.
 // Always rounds UP — you buy whole units, so this reflects true purchase cost.
@@ -234,6 +255,15 @@ function coverageUnits(area, coverage) {
 
 // Label for a coverage-type material's unit (bag/box/roll/...), defaulting to "bag" for legacy data
 function unitLabelOf(c) { return (c && c.unitLabel) || "bag"; }
+// Resolve which consumable to use for a role slot (thinset/grout): explicit pick first,
+// then the first material tagged with that role, then (for pre-role legacy data) the seed id.
+function pickConsumableByRole(consumables, role, selectedId) {
+  const list = consumables || [];
+  return list.find(c => c.id === selectedId)
+      || list.find(c => c.role === role)
+      || list.find(c => c.id === role)
+      || null;
+}
 
 // Pluralizes a unit label for display (box -> boxes, bag -> bags, etc.)
 function pluralUnit(label, count) {
@@ -320,11 +350,10 @@ function buildShoppingListItems(estimate, settings) {
     });
   }
 
-  // Thinset & grout are always part of the job
-  ["thinset", "grout"].forEach(id => {
-    const c = consumables.find(x => x.id === id);
-    if (c) addMaterial(c);
-  });
+  // Thinset & grout are always part of the job — use whichever brand was picked for this estimate
+  const thinsetC2 = pickConsumableByRole(consumables, "thinset", estimate.thinsetId);
+  const groutC2   = pickConsumableByRole(consumables, "grout", estimate.groutId);
+  [thinsetC2, groutC2].forEach(c => { if (c) addMaterial(c); });
 
   // Materials from every enabled service
   services.filter(sv => serviceState[sv.id]?.enabled).forEach(sv => {
@@ -475,7 +504,7 @@ function MaterialPicker({ consumables, assignedIds, onToggle }) {
               No materials match "{query}"
             </div>
           ) : (
-            <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
+            <div style={{ padding: "8px 0" }}>
               {groupKeys.map(cat => (
                 <div key={cat}>
                   {/* Category header — hidden when searching */}
@@ -625,6 +654,17 @@ function MaterialFormModal({ material, onSave, onDelete, onClose }) {
         </select>
       </div>
       <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Role</div>
+        <div style={{ fontSize: 11.5, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 6 }}>
+          Thinset and Grout are picked per job on the estimator. Tag every brand you stock so you can choose between them.
+        </div>
+        <select value={f.role || ""} onChange={e => set("role", e.target.value || null)} style={{ ...iStyle, cursor: "pointer" }}>
+          <option value="">None</option>
+          <option value="thinset">Thinset</option>
+          <option value="grout">Grout</option>
+        </select>
+      </div>
+      <div style={{ marginBottom: 14 }}>
         <div style={fieldLabelStyle}>Price Type</div>
         <select value={f.priceType} onChange={e => set("priceType", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
           {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "By Coverage" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
@@ -746,6 +786,48 @@ function TileFormModal({ tile, services, onSave, onDelete, onClose }) {
   );
 }
 
+function JobTypeFormModal({ jobType, services, onSave, onDelete, onClose }) {
+  const [f, setF] = useState(() => jobType ? { serviceIds: [], ...jobType } : newJobType());
+  const isEdit = !!jobType;
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const toggleService = svId => {
+    setF(p => {
+      const has = p.serviceIds.includes(svId);
+      return { ...p, serviceIds: has ? p.serviceIds.filter(x => x !== svId) : [...p.serviceIds, svId] };
+    });
+  };
+
+  return (
+    <ModalShell title={isEdit ? "Edit Job Type" : "Add Job Type"} onClose={onClose} onDelete={isEdit ? () => onDelete(f.id) : null}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={fieldLabelStyle}>Icon</div>
+          <select value={f.icon} onChange={e => set("icon", e.target.value)}
+            style={{ background: "#1a1610", border: "1px solid #2e2518", borderRadius: 4, color: "#f0ede6", fontSize: 18, padding: "7px 8px", cursor: "pointer", outline: "none" }}>
+            {JOB_TYPE_ICONS.map(ic => <option key={ic} value={ic}>{ic}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={fieldLabelStyle}>Job Type Name</div>
+          <input placeholder="e.g. Kitchen Floor, Shower" value={f.name} onChange={e => set("name", e.target.value)} style={{ ...iStyle, fontSize: 14, fontWeight: 700 }} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Note (optional)</div>
+        <input placeholder="Shown on estimator" value={f.notes || ""} onChange={e => set("notes", e.target.value)} style={{ ...iStyle, fontSize: 12 }} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Services to Auto-Enable</div>
+        <div style={{ fontSize: 11.5, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 8 }}>
+          Turned on automatically when this job type is selected on the estimator. You can still toggle any of them off per job.
+        </div>
+        <ServicePicker services={services || []} assignedIds={f.serviceIds || []} onToggle={toggleService} />
+      </div>
+      <button onClick={() => onSave(f)} style={primaryBtnStyle}>{isEdit ? "Save Changes" : "Add Job Type"}</button>
+    </ModalShell>
+  );
+}
+
 function ServiceFormModal({ service, consumables, onSave, onDelete, onClose }) {
   const [f, setF] = useState(() => service ? { ...service } : newService());
   const isEdit = !!service;
@@ -782,6 +864,7 @@ const SETTINGS_MENU = [
   { key: "consumables", label: "Consumables & Rates",  desc: "Thinset, grout, labor rates & waste factor" },
   { key: "tiles",       label: "Tile Types",           desc: "Saved tile products & pricing" },
   { key: "services",    label: "Services",             desc: "Add-on services you offer customers" },
+  { key: "jobtypes",    label: "Job Types",            desc: "Presets like Kitchen Floor or Shower that auto-pick services" },
 ];
 
 function SettingsPage({ settings, onSave, onExport, onImport }) {
@@ -818,10 +901,20 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
   }
   function deleteSv(id) { setS(p => ({ ...p, services: p.services.filter(sv => sv.id !== id) })); }
 
+  // Job Types CRUD
+  function saveJt(f) {
+    setS(p => {
+      const exists = (p.jobTypes || []).some(jt => jt.id === f.id);
+      return { ...p, jobTypes: exists ? p.jobTypes.map(jt => jt.id === f.id ? f : jt) : [...(p.jobTypes || []), f] };
+    });
+  }
+  function deleteJt(id) { setS(p => ({ ...p, jobTypes: (p.jobTypes || []).filter(jt => jt.id !== id) })); }
+
   // Add/Edit modal state: null | { mode: "add" } | { mode: "edit", id }
   const [matModal, setMatModal] = useState(null);
   const [tileModal, setTileModal] = useState(null);
   const [svModal, setSvModal] = useState(null);
+  const [jtModal, setJtModal] = useState(null);
 
   // ── Share Pricing Setup (export/import materials, tiles, services only) ──
   const pricingImportRef = useRef(null);
@@ -1121,7 +1214,7 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
                 <button key={c.id} onClick={() => setMatModal({ mode: "edit", id: c.id })} style={rowStyle}>
                   <div style={{ minWidth: 0 }}>
                     <div style={rowTitleStyle}>{c.name || "Unnamed material"}</div>
-                    <div style={rowSubtitleStyle}>{materialPriceLine(c)}</div>
+                    <div style={rowSubtitleStyle}>{materialPriceLine(c)}{c.role ? ` · ${c.role === "thinset" ? "Thinset" : "Grout"} option` : ""}</div>
                   </div>
                   <span style={chevronStyle}>›</span>
                 </button>
@@ -1181,6 +1274,29 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
         </>
       )}
 
+      {/* ── Job Types ── */}
+      {tab === "jobtypes" && (
+        <>
+          <div style={italicHintStyle}>
+            A Job Type is just a shortcut — picking one on the estimator auto-enables the services below. It has no cost of its own.
+          </div>
+          {(s.jobTypes || []).map(jt => (
+            <button key={jt.id} onClick={() => setJtModal({ mode: "edit", id: jt.id })} style={rowStyle}>
+              <div style={{ minWidth: 0 }}>
+                <div style={rowTitleStyle}>{jt.icon}  {jt.name || "Unnamed job type"}</div>
+                <div style={rowSubtitleStyle}>
+                  {jt.serviceIds && jt.serviceIds.length > 0
+                    ? `${jt.serviceIds.length} service${jt.serviceIds.length !== 1 ? "s" : ""} auto-enabled`
+                    : "No services assigned yet"}
+                </div>
+              </div>
+              <span style={chevronStyle}>›</span>
+            </button>
+          ))}
+          <button onClick={() => setJtModal({ mode: "add" })} style={addBtnStyle}>+ Add Job Type</button>
+        </>
+      )}
+
       {matModal && (
         <MaterialFormModal
           material={matModal.mode === "edit" ? s.consumables.find(c => c.id === matModal.id) : null}
@@ -1205,6 +1321,15 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
           onSave={f => { saveSv(f); setSvModal(null); }}
           onDelete={id => { deleteSv(id); setSvModal(null); }}
           onClose={() => setSvModal(null)}
+        />
+      )}
+      {jtModal && (
+        <JobTypeFormModal
+          jobType={jtModal.mode === "edit" ? (s.jobTypes || []).find(jt => jt.id === jtModal.id) : null}
+          services={s.services}
+          onSave={f => { saveJt(f); setJtModal(null); }}
+          onDelete={id => { deleteJt(id); setJtModal(null); }}
+          onClose={() => setJtModal(null)}
         />
       )}
 
@@ -2374,7 +2499,7 @@ function ShoppingListModal({ estimate, settings, onClose }) {
 // ─── Customer Presentation Mode ───────────────────────────────────────────────
 function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, area, linearFeet, wastePct, tile,
   tileWithWaste, tilePriceSqFt, enabledServices, serviceState, jobNotes, trueCost, markupMode,
-  markupPercent, estimateNumber, onClose }) {
+  markupPercent, estimateNumber, thinsetId, groutId, onClose }) {
 
   const c = settings.contractor || {};
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -2383,8 +2508,8 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
   const mp = cost => fmtD(cost * ratio);
   const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
   const allCons = settings.consumables || [];
-  const thinsetC = allCons.find(x => x.id === "thinset");
-  const groutC   = allCons.find(x => x.id === "grout");
+  const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
+  const groutC   = pickConsumableByRole(allCons, "grout", groutId);
   const firstName = customerName ? customerName.split(" ")[0] : "";
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const estNum = String(estimateNumber || 1).padStart(4, "0");
@@ -2656,7 +2781,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.10.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -2722,16 +2847,19 @@ export default function TileEstimator() {
       if (saved) {
         const parsed = JSON.parse(saved);
         // Merge with defaults so new fields added in updates always exist
-        return {
+        const merged = {
           miscPercent: 3, defaultMarkup: 40,
           consumables: SEED_CONSUMABLES,
           tiles: SEED_TILES,
           services: SEED_SERVICES,
+          jobTypes: SEED_JOB_TYPES,
           contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
           estimateNumber: 1,
           defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
           ...parsed,
         };
+        merged.consumables = migrateConsumableRoles(merged.consumables);
+        return merged;
       }
     } catch (e) {}
     return {
@@ -2739,6 +2867,7 @@ export default function TileEstimator() {
       consumables: SEED_CONSUMABLES,
       tiles: SEED_TILES,
       services: SEED_SERVICES,
+      jobTypes: SEED_JOB_TYPES,
       contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
       estimateNumber: 1,
       defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
@@ -2750,6 +2879,9 @@ export default function TileEstimator() {
   const [sqft, setSqft]                     = useState("");
   const [linearFt, setLinearFt]             = useState("");
   const [selectedTileId, setSelectedTileId] = useState(null);
+  const [selectedJobTypeId, setSelectedJobTypeId] = useState(null);
+  const [selectedThinsetId, setSelectedThinsetId] = useState(null);
+  const [selectedGroutId, setSelectedGroutId] = useState(null);
   const [tilePriceSqFt, setTilePriceSqFt]   = useState("");
   const [wastePercent, setWastePercent]     = useState("10");
   const [jobNotes, setJobNotes]             = useState("");
@@ -2795,6 +2927,8 @@ export default function TileEstimator() {
     setSettings(s);
     setMarkupPercent(nv(s.defaultMarkup, 40));
     if (selectedTileId && !s.tiles.find(t => t.id === selectedTileId)) setSelectedTileId(null);
+    if (selectedThinsetId && !s.consumables.find(c => c.id === selectedThinsetId)) setSelectedThinsetId(null);
+    if (selectedGroutId && !s.consumables.find(c => c.id === selectedGroutId)) setSelectedGroutId(null);
     setSavedMsg(true);
     setUnsavedWarning(false);
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
@@ -2819,6 +2953,8 @@ export default function TileEstimator() {
       linearFt: linearFeet,
       tileId: selectedTileId,
       tileName: tile?.name || "",
+      thinsetId: selectedThinsetId,
+      groutId: selectedGroutId,
       tilePriceSqFt: tilePriceSqFt || "",
       wastePercent: wastePercent || "10",
       serviceState: JSON.parse(JSON.stringify(serviceState)),
@@ -2898,6 +3034,8 @@ export default function TileEstimator() {
       linearFt: linearFeet,
       tileId: selectedTileId,
       tileName: tile?.name || "",
+      thinsetId: selectedThinsetId,
+      groutId: selectedGroutId,
       tilePriceSqFt: tilePriceSqFt || "",
       wastePercent: wastePercent || "10",
       serviceState: JSON.parse(JSON.stringify(serviceState)),
@@ -2967,12 +3105,13 @@ export default function TileEstimator() {
       }
       const merged = {
         miscPercent: 3, defaultMarkup: 40,
-        consumables: SEED_CONSUMABLES, tiles: SEED_TILES, services: SEED_SERVICES,
+        consumables: SEED_CONSUMABLES, tiles: SEED_TILES, services: SEED_SERVICES, jobTypes: SEED_JOB_TYPES,
         contractor: { companyName: "", contactName: "", phone: "", email: "", website: "" },
         estimateNumber: 1,
         defaultTerms: "50% deposit required to schedule.\nRemaining balance due upon completion.\nThis estimate is valid for 30 days.\nAny additional work outside this scope will be quoted separately.",
         ...rawSettings,
       };
+      merged.consumables = migrateConsumableRoles(merged.consumables);
       try { localStorage.setItem("tje_settings", JSON.stringify(merged)); } catch (e) {}
       setSettings(merged);
       setMarkupPercent(nv(merged.defaultMarkup, 40));
@@ -3026,8 +3165,8 @@ export default function TileEstimator() {
   const laborCost    = area * laborRate;
 
   // Thinset & grout come from consumables list
-  const thinsetC  = settings.consumables.find(c => c.id === "thinset");
-  const groutC    = settings.consumables.find(c => c.id === "grout");
+  const thinsetC  = pickConsumableByRole(settings.consumables, "thinset", selectedThinsetId);
+  const groutC    = pickConsumableByRole(settings.consumables, "grout", selectedGroutId);
   const thinsetCost = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
   const groutCost   = groutC   ? consumableCost(groutC,   area, linearFeet, wastePct) : 0;
 
@@ -3072,6 +3211,17 @@ export default function TileEstimator() {
       return next;
     });
   }
+  // Selecting a job type auto-enables its bundled services (does not disable anything already on)
+  function selectJobType(jt) {
+    setSelectedJobTypeId(jt.id);
+    const required = jt.serviceIds || [];
+    if (required.length === 0) return;
+    setServiceState(p => {
+      const next = { ...p };
+      required.forEach(svId => { next[svId] = { ...next[svId], enabled: true }; });
+      return next;
+    });
+  }
   function setOverride(svId, cId, val) {
     setServiceState(p => ({
       ...p, [svId]: { ...p[svId], overrides: { ...(p[svId]?.overrides || {}), [cId]: val } }
@@ -3096,7 +3246,7 @@ export default function TileEstimator() {
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
   function resetEstimate() {
-    setSqft(""); setLinearFt(""); setSelectedTileId(null); setTilePriceSqFt(""); setWastePercent("10");
+    setSqft(""); setLinearFt(""); setSelectedTileId(null); setSelectedJobTypeId(null); setSelectedThinsetId(null); setSelectedGroutId(null); setTilePriceSqFt(""); setWastePercent("10");
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
     setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
@@ -3107,6 +3257,8 @@ export default function TileEstimator() {
     setSqft(String(record.sqft || ""));
     setLinearFt(String(record.linearFt || ""));
     setSelectedTileId(record.tileId || null);
+    setSelectedThinsetId(record.thinsetId || null);
+    setSelectedGroutId(record.groutId || null);
     setTilePriceSqFt(String(record.tilePriceSqFt || ""));
     setWastePercent(String(record.wastePercent || "10"));
     setJobNotes(record.jobNotes || "");
@@ -3140,6 +3292,8 @@ export default function TileEstimator() {
           tile={tile}
           tileWithWaste={tileWithWaste}
           tilePriceSqFt={tilePriceSqFt}
+          thinsetId={selectedThinsetId}
+          groutId={selectedGroutId}
           enabledServices={enabledServices}
           serviceState={serviceState}
           jobNotes={jobNotes}
@@ -3306,7 +3460,32 @@ export default function TileEstimator() {
           </Section>
 
           {/* 01 */}
-          <Section label="01" title="Square Footage">
+          <Section label="01" title="Job Type (optional)">
+            <div style={{ fontSize: 12, color: "#6b5f4a", marginBottom: 10 }}>
+              Pick a preset like Kitchen Floor or Shower to auto-check the services that job usually needs. Skip this if you'd rather pick services yourself.
+            </div>
+            {(!settings.jobTypes || settings.jobTypes.length === 0) ? (
+              <EmptyState msg="No job types yet — add some in ⚙ Settings → Job Types" />
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px,1fr))", gap: 10 }}>
+                {settings.jobTypes.map(jt => (
+                  <button key={jt.id} onClick={() => selectJobType(jt)} style={{
+                    background: selectedJobTypeId === jt.id ? "#c19748" : "#1c1812",
+                    border: `1px solid ${selectedJobTypeId === jt.id ? "#c19748" : "#2e2518"}`,
+                    borderRadius: 6, padding: "12px 8px", cursor: "pointer",
+                    color: selectedJobTypeId === jt.id ? "#0f0f0f" : "#c8b98a",
+                    textAlign: "center", transition: "all 0.18s",
+                  }}>
+                    <div style={{ fontSize: 20, marginBottom: 4 }}>{jt.icon}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, fontFamily: "sans-serif" }}>{jt.name || "Unnamed"}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 02 */}
+          <Section label="02" title="Square Footage">
             <input type="number" placeholder="e.g. 350" value={sqft} onChange={e => setSqft(e.target.value)} style={inputStyle} />
             <div style={{ fontSize: 12, color: "#6b5f4a", marginTop: 8 }}>Enter the total area in square feet</div>
             <div style={{ marginTop: 14 }}>
@@ -3317,7 +3496,7 @@ export default function TileEstimator() {
           </Section>
 
           {/* 02 */}
-          <Section label="02" title="Tile Type">
+          <Section label="03" title="Tile Type">
             {settings.tiles.length === 0 ? <EmptyState msg="No tile types yet — add some in ⚙ Settings → Tile Types" /> : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px,1fr))", gap: 10 }}>
                 {settings.tiles.map(t => (
@@ -3358,10 +3537,43 @@ export default function TileEstimator() {
                 </div>
               </>
             )}
+            {(() => {
+              const thinsetOptions = settings.consumables.filter(c => c.role === "thinset");
+              const groutOptions   = settings.consumables.filter(c => c.role === "grout");
+              if (thinsetOptions.length === 0 && groutOptions.length === 0) return null;
+              return (
+                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {thinsetOptions.length > 0 && (
+                    <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Thinset</div>
+                      <select
+                        value={selectedThinsetId || thinsetOptions[0].id}
+                        onChange={e => setSelectedThinsetId(e.target.value)}
+                        style={{ ...inputStyle, cursor: "pointer" }}
+                      >
+                        {thinsetOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {groutOptions.length > 0 && (
+                    <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Grout</div>
+                      <select
+                        value={selectedGroutId || groutOptions[0].id}
+                        onChange={e => setSelectedGroutId(e.target.value)}
+                        style={{ ...inputStyle, cursor: "pointer" }}
+                      >
+                        {groutOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </Section>
 
           {/* 03 */}
-          <Section label="03" title="Additional Services">
+          <Section label="04" title="Additional Services">
             {settings.services.length === 0 ? <EmptyState msg="No services yet — add some in ⚙ Settings → Services" /> : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {settings.services.map(sv => {
@@ -3453,7 +3665,7 @@ export default function TileEstimator() {
           </Section>
 
           {/* 04 — Job Notes */}
-          <Section label="04" title="Job Notes">
+          <Section label="05" title="Job Notes">
             <textarea
               placeholder="Scope details, customer requests, site conditions, special instructions…"
               value={jobNotes}
@@ -3465,7 +3677,7 @@ export default function TileEstimator() {
           </Section>
 
           {/* 05 */}
-          <Section label="05" title="Customer Pricing">
+          <Section label="06" title="Customer Pricing">
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {[["percent","% Markup"],["manual","Set Manual Price"]].map(([mode, label]) => (
                 <button key={mode} onClick={() => setMarkupMode(mode)} style={{
@@ -3587,6 +3799,8 @@ export default function TileEstimator() {
                 tile={tile}
                 tileWithWaste={tileWithWaste}
                 tilePriceSqFt={tilePriceSqFt}
+                thinsetId={selectedThinsetId}
+                groutId={selectedGroutId}
                 enabledServices={enabledServices}
                 serviceState={serviceState}
                 trueCost={trueCost}
@@ -3679,7 +3893,7 @@ export default function TileEstimator() {
 function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileWithWaste, tilePriceSqFt,
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
   markupMode, markupPercent, jobNotes, customerName, customerEmail, customerPhone,
-  projectDesc, onEstimateSent }) {
+  projectDesc, thinsetId, groutId, onEstimateSent }) {
 
   const [showPreview, setShowPreview]     = useState(false);
   const [sendMode, setSendMode]           = useState(null);
@@ -3714,8 +3928,8 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = allCons.find(x => x.id === "thinset");
-    const groutC   = allCons.find(x => x.id === "grout");
+    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
+    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
     const firstName = customerName ? customerName.split(" ")[0] : "";
     const L = [];
 
@@ -3835,8 +4049,8 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = allCons.find(x => x.id === "thinset");
-    const groutC   = allCons.find(x => x.id === "grout");
+    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
+    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
     const firstName = customerName ? customerName.split(" ")[0] : "";
     const L = [];
 
@@ -3892,8 +4106,8 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = allCons.find(x => x.id === "thinset");
-    const groutC   = allCons.find(x => x.id === "grout");
+    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
+    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
     const firstName = customerName ? customerName.split(" ")[0] : "";
 
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
@@ -3990,8 +4204,8 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
     const mp = cost => fmt(cost * ratio);
     const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = allCons.find(x => x.id === "thinset");
-    const groutC   = allCons.find(x => x.id === "grout");
+    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
+    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
     const firstName = customerName ? customerName.split(" ")[0] : "";
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
     const thinMat  = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
@@ -4203,7 +4417,16 @@ function HelpPage() {
       ],
     },
     {
-      title: "Step 2 — Tile Type",
+      title: "Step 2 — Job Type (optional)",
+      icon: "🏠",
+      content: [
+        { type: "p", text: "Pick a preset like Kitchen Floor, Backsplash, or Shower and it auto-checks the services that job usually needs in Step 4 — nothing you've already checked gets unchecked." },
+        { type: "p", text: "This step is entirely optional. Skip it and pick services yourself if you'd rather — the estimate works exactly the same either way." },
+        { type: "p", text: "Manage your own presets in Settings → Job Types." },
+      ],
+    },
+    {
+      title: "Step 3 — Tile Type",
       icon: "⬜",
       content: [
         { type: "p", text: "Select the type of tile being installed. This sets the labor rate for the job." },
@@ -4216,10 +4439,12 @@ function HelpPage() {
           "Diagonal or pattern layout — 15%",
           "Complex cuts or large format — 15–20%",
         ]},
+        { type: "h", text: "Thinset & Grout" },
+        { type: "p", text: "If you've tagged more than one brand in Settings → Consumables & Rates, dropdowns appear here to pick which one to use for this job." },
       ],
     },
     {
-      title: "Step 3 — Additional Services",
+      title: "Step 4 — Additional Services",
       icon: "🔧",
       content: [
         { type: "p", text: "Check any services that apply to this job. Each service expands to show its labor and materials." },
@@ -4242,7 +4467,7 @@ function HelpPage() {
       ],
     },
     {
-      title: "Step 4 — Customer Pricing",
+      title: "Step 5 — Customer Pricing",
       icon: "💰",
       content: [
         { type: "p", text: "Choose between a percentage markup over your true cost or a manual flat price." },
@@ -4300,6 +4525,8 @@ function HelpPage() {
         ]},
         { type: "h", text: "Misc Supplies %" },
         { type: "p", text: "A percentage of your labor cost added automatically to every estimate to cover blades, spacers, buckets, and other consumables too small to track individually." },
+        { type: "h", text: "Role (Thinset / Grout)" },
+        { type: "p", text: "Tag a material as Thinset or Grout to make it selectable per job. Tag as many brands as you stock — a dropdown appears on the estimator so you can pick which one to use for each specific job." },
         { type: "h", text: "Default Markup %" },
         { type: "p", text: "Pre-fills the markup field on every new estimate. Set it to your typical rate and adjust per job as needed." },
       ],
@@ -4316,6 +4543,19 @@ function HelpPage() {
         ]},
         { type: "h", text: "What Gets Set Per Job" },
         { type: "p", text: "Tile material cost and waste percentage are always entered on the estimator, not here — they change with every order and supplier." },
+      ],
+    },
+    {
+      title: "Settings — Job Types",
+      icon: "🏠",
+      content: [
+        { type: "p", text: "A Job Type is a named shortcut — Kitchen Floor, Backsplash, Shower, or any preset you create. It has no cost of its own." },
+        { type: "h", text: "Setting One Up" },
+        { type: "bullets", items: [
+          "Give it a name and icon",
+          "Tap the service pill buttons to assign the services that job usually needs",
+          "Selecting this Job Type on the estimator auto-checks those services — you can still add or remove any service by hand afterward",
+        ]},
       ],
     },
     {
@@ -4369,7 +4609,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
-          "v1.9.1 — Fixed the Required Services checklist in the Tile Type editor cutting off after ~6 services on mobile: it had its own nested scroll area inside the already-scrolling modal, which doesn't scroll reliably with touch. It now grows naturally so every service is reachable via the modal's own scroll",
+          "v1.10.0 — New Job Type presets (Kitchen Floor, Backsplash, Shower, and any you add) — pick one on the estimator and it auto-checks the services that job usually needs, without unchecking anything you already picked. Materials can now be tagged as Thinset or Grout, so you can stock multiple brands and choose which one to use per job instead of always using a single fixed material — your pick is remembered on saved estimates and drafts",
           "v1.9.0 — Materials can now use a custom waste % instead of the job default; Tile Types can be assigned Required Services that auto-enable when you pick that tile on the estimator; sent estimates now save true cost, profit $, and margin % (shown as a breakdown in History); new Accounting tab with Day/Week/Month/Quarter/Year views showing net profit, total charged, total expense, average margin, a profit chart, and a searchable job list per period",
           "v1.8.0 — New Shopping List: generate a materials buy-list from any sent estimate or draft, with the tile itself, thinset/grout, and every assigned service material auto-quantified; check items off as you buy them, add custom items, and export a text list to take to the supplier. Also added Job Status for sent estimates (Awaiting Approval / Approved / Complete / Declined, set manually) and Materials Status (Need to Buy / All Purchased, tracked automatically from your shopping list checkboxes) — both shown as badges in History",
           "v1.7.0 — Materials sold by coverage (bags, boxes, sheets, rolls, etc.) now round up to whole units so costs match what you'd actually buy; added an optional per-material waste % and a new Linear Feet job input for trim/edge/cove-base materials priced by the linear foot instead of area; flat-priced materials (corners, end caps) now support a per-job quantity",
