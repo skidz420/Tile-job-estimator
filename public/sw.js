@@ -1,4 +1,4 @@
-const CACHE = "tje-v1.9.1";
+const CACHE = "tje-v1.10.0";
 
 self.addEventListener("install", e => {
   self.skipWaiting();
