@@ -198,6 +198,12 @@ const TILE_ICONS = ["⬜","🔲","🪨","◼","🔷","🟫","🟦","🟩","⬛",
 const PRICE_TYPES = ["bag", "sqft", "flat"];
 const PRICE_TYPE_LABELS = { bag: "Bag (price + coverage)", sqft: "Per Sqft ($/sqft)", flat: "Flat ($/unit)" };
 
+const PRICE_CHECK_STORES = [
+  { key: "homedepot", label: "Home Depot", url: q => `https://www.homedepot.com/s/${encodeURIComponent(q)}` },
+  { key: "lowes",     label: "Lowe's",      url: q => `https://www.lowes.com/search?searchTerm=${encodeURIComponent(q)}` },
+  { key: "flooranddecor", label: "Floor & Decor", url: q => `https://www.flooranddecor.com/search?q=${encodeURIComponent(q)}` },
+];
+
 function uid() { return Math.random().toString(36).slice(2, 9); }
 function fmt(n) { return (isNaN(n) || n == null) ? "$—" : n.toLocaleString("en-US", { style: "currency", currency: "USD" }); }
 function nv(v, fb = 0) { return parseFloat(v) || fb; }
@@ -218,8 +224,47 @@ function consumableCost(c, area) {
   return 0;
 }
 
+// ─── Check Price button (store picker popup) ─────────────────────────────────
+function CheckPriceButton({ term, style }) {
+  const [open, setOpen] = useState(false);
+  if (!term) return null;
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5,
+          color: "#e8813a", fontFamily: "sans-serif", fontWeight: 600, cursor: "pointer",
+          border: "1px solid #4a3520", borderRadius: 14, padding: "5px 10px",
+          background: "rgba(232,129,58,0.08)", flexShrink: 0, ...style,
+        }}
+      >🔍 Check Price</button>
+      {open && (
+        <>
+          <div onClick={e => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
+          <div onClick={e => e.stopPropagation()} style={{
+            position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 61,
+            background: "#1a1208", border: "1px solid #3a2e1a", borderRadius: 8,
+            minWidth: 170, boxShadow: "0 8px 24px rgba(0,0,0,0.5)", overflow: "hidden",
+          }}>
+            {PRICE_CHECK_STORES.map(store => (
+              <a key={store.key} href={store.url(term)} target="_blank" rel="noopener noreferrer"
+                onClick={() => setOpen(false)}
+                style={{
+                  display: "block", padding: "10px 14px", fontSize: 13, color: "#f5f0e8",
+                  fontFamily: "sans-serif", textDecoration: "none", borderBottom: "1px solid #2e2518",
+                }}>{store.label}</a>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Material Picker (grouped checklist + search) ────────────────────────────
 function MaterialPicker({ consumables, assignedIds, onToggle }) {
+
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
 
@@ -331,6 +376,178 @@ function MaterialPicker({ consumables, assignedIds, onToggle }) {
   );
 }
 
+// ─── Shared list-row / modal building blocks ──────────────────────────────────
+const rowStyle = {
+  width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+  textAlign: "left", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8,
+  padding: "12px 14px", marginBottom: 8, cursor: "pointer", fontFamily: "sans-serif",
+};
+const rowTitleStyle = { fontSize: 13.5, color: "#f5f0e8", fontWeight: 600 };
+const rowSubtitleStyle = { fontSize: 12, color: "#8a7d5e", marginTop: 2 };
+const chevronStyle = { color: "#5a4f38", fontSize: 16, flexShrink: 0 };
+const groupHeaderStyle = { fontSize: 10, color: "#c19748", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 };
+const italicHintStyle = { fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 16, fontStyle: "italic" };
+const fieldLabelStyle = { fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", marginBottom: 5, textTransform: "uppercase", letterSpacing: 1 };
+const primaryBtnStyle = {
+  width: "100%", padding: 14, marginTop: 6,
+  background: "linear-gradient(135deg, #c19748, #a07830)",
+  border: "none", borderRadius: 8, cursor: "pointer",
+  color: "#0f0f0f", fontSize: 13, fontWeight: 700,
+  letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "sans-serif",
+};
+
+function materialPriceLine(c) {
+  if (c.priceType === "bag") return `$${c.bagPrice || 0}/bag${c.bagCoverage ? ` · covers ${c.bagCoverage} sqft` : ""}`;
+  if (c.priceType === "sqft") return `$${c.unitCost || 0}/sqft`;
+  return `$${c.unitCost || 0} flat`;
+}
+
+function ModalShell({ title, onClose, onDelete, children }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 200,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460, background: "#1a1208", border: "1px solid #3a2e1a",
+        borderRadius: 14, padding: 22, maxHeight: "88vh", overflowY: "auto",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 16, color: "#f5f0e8", fontWeight: 700, fontFamily: "sans-serif" }}>{title}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8a7d5e", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+        </div>
+        {children}
+        {onDelete && (
+          <button onClick={onDelete} style={{
+            width: "100%", padding: 12, marginTop: 10, background: "transparent",
+            border: "1px solid #3a1010", borderRadius: 8, color: "#c15b48", fontSize: 12,
+            fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", fontFamily: "sans-serif",
+          }}>Delete</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MaterialFormModal({ material, onSave, onDelete, onClose }) {
+  const [f, setF] = useState(() => material ? { ...material } : newConsumable());
+  const isEdit = !!material;
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  return (
+    <ModalShell title={isEdit ? "Edit Material" : "Add Material"} onClose={onClose} onDelete={isEdit ? () => onDelete(f.id) : null}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Material Name</div>
+        <input placeholder="e.g. Sanded Grout" value={f.name} onChange={e => set("name", e.target.value)} style={{ ...iStyle, fontSize: 14 }} />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Category</div>
+        <select value={f.category || "Other"} onChange={e => set("category", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
+          {CONSUMABLE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+        </select>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Price Type</div>
+        <select value={f.priceType} onChange={e => set("priceType", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
+          {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "Bag" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: f.priceType === "bag" ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 0 }}>{f.priceType === "bag" ? "Bag Price" : "Unit Cost"}</div>
+            <CheckPriceButton term={f.name} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "#5a4f38", fontSize: 13 }}>$</span>
+            <input type="number" placeholder="0.00"
+              value={f.priceType === "bag" ? f.bagPrice : f.unitCost}
+              onChange={e => set(f.priceType === "bag" ? "bagPrice" : "unitCost", e.target.value)}
+              style={iStyle} />
+          </div>
+        </div>
+        {f.priceType === "bag" && (
+          <div>
+            <div style={fieldLabelStyle}>Coverage (sqft/bag)</div>
+            <input type="number" placeholder="sqft/bag" value={f.bagCoverage} onChange={e => set("bagCoverage", e.target.value)} style={iStyle} />
+          </div>
+        )}
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Note (optional)</div>
+        <input placeholder="e.g. 50 lb bag" value={f.note || ""} onChange={e => set("note", e.target.value)} style={{ ...iStyle, fontSize: 12 }} />
+      </div>
+      <button onClick={() => onSave(f)} style={primaryBtnStyle}>{isEdit ? "Save Changes" : "Add Material"}</button>
+    </ModalShell>
+  );
+}
+
+function TileFormModal({ tile, onSave, onDelete, onClose }) {
+  const [f, setF] = useState(() => tile ? { ...tile } : newTile());
+  const isEdit = !!tile;
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  return (
+    <ModalShell title={isEdit ? "Edit Tile Type" : "Add Tile Type"} onClose={onClose} onDelete={isEdit ? () => onDelete(f.id) : null}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={fieldLabelStyle}>Icon</div>
+          <select value={f.icon} onChange={e => set("icon", e.target.value)}
+            style={{ background: "#1a1610", border: "1px solid #2e2518", borderRadius: 4, color: "#f0ede6", fontSize: 18, padding: "7px 8px", cursor: "pointer", outline: "none" }}>
+            {TILE_ICONS.map(ic => <option key={ic} value={ic}>{ic}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={fieldLabelStyle}>Tile Name</div>
+          <input placeholder="e.g. Marble Mosaic" value={f.name} onChange={e => set("name", e.target.value)} style={{ ...iStyle, fontSize: 14, fontWeight: 700 }} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+          <div style={{ ...fieldLabelStyle, marginBottom: 0 }}>Labor $/sqft</div>
+          <CheckPriceButton term={f.name} />
+        </div>
+        <input type="number" placeholder="0.00" value={f.labor} onChange={e => set("labor", e.target.value)} style={iStyle} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Note (optional)</div>
+        <input placeholder="Shown on estimator" value={f.notes || ""} onChange={e => set("notes", e.target.value)} style={{ ...iStyle, fontSize: 12 }} />
+      </div>
+      <button onClick={() => onSave(f)} style={primaryBtnStyle}>{isEdit ? "Save Changes" : "Add Tile Type"}</button>
+    </ModalShell>
+  );
+}
+
+function ServiceFormModal({ service, consumables, onSave, onDelete, onClose }) {
+  const [f, setF] = useState(() => service ? { ...service } : newService());
+  const isEdit = !!service;
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const toggle = cId => {
+    setF(p => {
+      const has = p.consumableIds.includes(cId);
+      return { ...p, consumableIds: has ? p.consumableIds.filter(x => x !== cId) : [...p.consumableIds, cId] };
+    });
+  };
+
+  return (
+    <ModalShell title={isEdit ? "Edit Service" : "Add Service"} onClose={onClose} onDelete={isEdit ? () => onDelete(f.id) : null}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={fieldLabelStyle}>Service Name</div>
+        <input placeholder="e.g. Niche Build" value={f.name} onChange={e => set("name", e.target.value)} style={{ ...iStyle, fontSize: 14, fontWeight: 700 }} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Labor $/sqft</div>
+        <input type="number" placeholder="0.00" value={f.laborPerSqFt} onChange={e => set("laborPerSqFt", e.target.value)} style={iStyle} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Materials Used</div>
+        <MaterialPicker consumables={consumables} assignedIds={f.consumableIds} onToggle={toggle} />
+      </div>
+      <button onClick={() => onSave(f)} style={primaryBtnStyle}>{isEdit ? "Save Changes" : "Add Service"}</button>
+    </ModalShell>
+  );
+}
+
 // ─── Settings Page ────────────────────────────────────────────────────────────
 const SETTINGS_MENU = [
   { key: "contractor",  label: "Contractor Info",     desc: "Your business name, logo & contact details" },
@@ -346,33 +563,191 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
 
   function setField(k, v) { setS(p => ({ ...p, [k]: v })); }
 
-  // Consumables CRUD
-  function updateC(id, field, val) {
-    setS(p => ({ ...p, consumables: p.consumables.map(c => c.id === id ? { ...c, [field]: val } : c) }));
+  // Consumables CRUD — save handles both add (new id) and edit (existing id)
+  function saveC(f) {
+    setS(p => {
+      const exists = p.consumables.some(c => c.id === f.id);
+      return { ...p, consumables: exists ? p.consumables.map(c => c.id === f.id ? f : c) : [...p.consumables, f] };
+    });
   }
-  function addC()       { setS(p => ({ ...p, consumables: [...p.consumables, newConsumable()] })); }
-  function deleteC(id)  { setS(p => ({ ...p, consumables: p.consumables.filter(c => c.id !== id) })); }
+  function deleteC(id) { setS(p => ({ ...p, consumables: p.consumables.filter(c => c.id !== id) })); }
 
   // Tiles CRUD
-  function updateT(id, field, val) {
-    setS(p => ({ ...p, tiles: p.tiles.map(t => t.id === id ? { ...t, [field]: val } : t) }));
+  function saveT(f) {
+    setS(p => {
+      const exists = p.tiles.some(t => t.id === f.id);
+      return { ...p, tiles: exists ? p.tiles.map(t => t.id === f.id ? f : t) : [...p.tiles, f] };
+    });
   }
-  function addT()       { setS(p => ({ ...p, tiles: [...p.tiles, newTile()] })); }
-  function deleteT(id)  { setS(p => ({ ...p, tiles: p.tiles.filter(t => t.id !== id) })); }
+  function deleteT(id) { setS(p => ({ ...p, tiles: p.tiles.filter(t => t.id !== id) })); }
 
   // Services CRUD
-  function updateSv(id, field, val) {
-    setS(p => ({ ...p, services: p.services.map(sv => sv.id === id ? { ...sv, [field]: val } : sv) }));
+  function saveSv(f) {
+    setS(p => {
+      const exists = p.services.some(sv => sv.id === f.id);
+      return { ...p, services: exists ? p.services.map(sv => sv.id === f.id ? f : sv) : [...p.services, f] };
+    });
   }
-  function addSv()      { setS(p => ({ ...p, services: [...p.services, newService()] })); }
   function deleteSv(id) { setS(p => ({ ...p, services: p.services.filter(sv => sv.id !== id) })); }
-  function toggleConsumableOnService(svId, cId) {
-    setS(p => ({ ...p, services: p.services.map(sv => {
-      if (sv.id !== svId) return sv;
-      const has = sv.consumableIds.includes(cId);
-      return { ...sv, consumableIds: has ? sv.consumableIds.filter(x => x !== cId) : [...sv.consumableIds, cId] };
-    })}));
+
+  // Add/Edit modal state: null | { mode: "add" } | { mode: "edit", id }
+  const [matModal, setMatModal] = useState(null);
+  const [tileModal, setTileModal] = useState(null);
+  const [svModal, setSvModal] = useState(null);
+
+  // ── Share Pricing Setup (export/import materials, tiles, services only) ──
+  const pricingImportRef = useRef(null);
+  const [pricingReview, setPricingReview] = useState(null); // null | { consumablesDiff, tilesDiff, servicesDiff, choices }
+
+  function exportPricingSetup() {
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+    const payload = {
+      type: "tje-pricing-setup",
+      version: APP_VERSION,
+      exportDate: now.toISOString(),
+      consumables: s.consumables,
+      tiles: s.tiles,
+      services: s.services,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `tje-pricing-setup-${stamp}.json`; a.click();
+    URL.revokeObjectURL(url);
   }
+
+  function keyName(name) { return (name || "").trim().toLowerCase(); }
+
+  // Classify an imported list against the current list: identical / new / conflict
+  function diffSimpleList(importedList, currentList, compareFields) {
+    const currentByName = {};
+    currentList.forEach(item => { currentByName[keyName(item.name)] = item; });
+    const conflicts = [];
+    const newItems = [];
+    let identicalCount = 0;
+    importedList.forEach(imp => {
+      const cur = currentByName[keyName(imp.name)];
+      if (!cur) {
+        newItems.push(imp);
+      } else {
+        const identical = compareFields.every(f => String(cur[f] ?? "") === String(imp[f] ?? ""));
+        if (identical) identicalCount++;
+        else conflicts.push({ key: keyName(imp.name), current: cur, imported: imp });
+      }
+    });
+    return { conflicts, newItems, identicalCount };
+  }
+
+  function diffServices(importedServices, importedConsumables, currentServices, currentConsumables) {
+    const nameById = list => Object.fromEntries(list.map(c => [c.id, keyName(c.name)]));
+    const impNameById = nameById(importedConsumables);
+    const curNameById = nameById(currentConsumables);
+    const matNames = (sv, byId) => sv.consumableIds.map(id => byId[id]).filter(Boolean).sort().join("|");
+
+    const currentByName = {};
+    currentServices.forEach(sv => { currentByName[keyName(sv.name)] = sv; });
+    const conflicts = [];
+    const newItems = [];
+    let identicalCount = 0;
+    importedServices.forEach(imp => {
+      const cur = currentByName[keyName(imp.name)];
+      if (!cur) {
+        newItems.push(imp);
+      } else {
+        const laborMatch = String(cur.laborPerSqFt ?? "") === String(imp.laborPerSqFt ?? "");
+        const matsMatch = matNames(cur, curNameById) === matNames(imp, impNameById);
+        if (laborMatch && matsMatch) identicalCount++;
+        else conflicts.push({ key: keyName(imp.name), current: cur, imported: imp });
+      }
+    });
+    return { conflicts, newItems, identicalCount };
+  }
+
+  function startPricingImport(jsonText) {
+    let parsed;
+    try { parsed = JSON.parse(jsonText); } catch (e) {
+      alert("Failed to read file. Make sure it's a valid pricing setup export from this app.");
+      return;
+    }
+    if (!parsed || (!parsed.consumables && !parsed.tiles && !parsed.services)) {
+      alert("This doesn't look like a valid Pricing Setup file.");
+      return;
+    }
+    const importedConsumables = parsed.consumables || [];
+    const importedTiles = parsed.tiles || [];
+    const importedServices = parsed.services || [];
+
+    const consumablesDiff = diffSimpleList(importedConsumables, s.consumables, ["priceType", "bagPrice", "bagCoverage", "unitCost", "category", "note"]);
+    const tilesDiff = diffSimpleList(importedTiles, s.tiles, ["labor", "icon", "notes"]);
+    const servicesDiff = diffServices(importedServices, importedConsumables, s.services, s.consumables);
+
+    const choices = {};
+    consumablesDiff.conflicts.forEach(c => { choices[c.key + ":mat"] = "mine"; });
+    tilesDiff.conflicts.forEach(c => { choices[c.key + ":tile"] = "mine"; });
+    servicesDiff.conflicts.forEach(c => { choices[c.key + ":svc"] = "mine"; });
+
+    setPricingReview({ importedConsumables, importedTiles, importedServices, consumablesDiff, tilesDiff, servicesDiff, choices });
+  }
+
+  function applyPricingImport() {
+    const { importedConsumables, importedTiles, importedServices, consumablesDiff, tilesDiff, servicesDiff, choices } = pricingReview;
+
+    // 1. Merge consumables, building an id map (imported id -> final local id)
+    const idMap = {};
+    let newConsumables = [...s.consumables];
+    const curConsByName = Object.fromEntries(s.consumables.map(c => [keyName(c.name), c]));
+    importedConsumables.forEach(imp => {
+      const cur = curConsByName[keyName(imp.name)];
+      if (!cur) {
+        const fresh = { ...imp, id: uid() };
+        newConsumables.push(fresh);
+        idMap[imp.id] = fresh.id;
+      } else {
+        idMap[imp.id] = cur.id;
+        const isConflict = consumablesDiff.conflicts.some(c => c.key === keyName(imp.name));
+        if (isConflict && choices[keyName(imp.name) + ":mat"] === "imported") {
+          newConsumables = newConsumables.map(c => c.id === cur.id ? { ...imp, id: cur.id } : c);
+        }
+      }
+    });
+
+    // 2. Merge tiles (no cross-references)
+    let newTiles = [...s.tiles];
+    const curTilesByName = Object.fromEntries(s.tiles.map(t => [keyName(t.name), t]));
+    importedTiles.forEach(imp => {
+      const cur = curTilesByName[keyName(imp.name)];
+      if (!cur) {
+        newTiles.push({ ...imp, id: uid() });
+      } else {
+        const isConflict = tilesDiff.conflicts.some(c => c.key === keyName(imp.name));
+        if (isConflict && choices[keyName(imp.name) + ":tile"] === "imported") {
+          newTiles = newTiles.map(t => t.id === cur.id ? { ...imp, id: cur.id } : t);
+        }
+      }
+    });
+
+    // 3. Merge services, remapping consumableIds through idMap
+    let newServices = [...s.services];
+    const curSvByName = Object.fromEntries(s.services.map(sv => [keyName(sv.name), sv]));
+    importedServices.forEach(imp => {
+      const remapped = { ...imp, consumableIds: imp.consumableIds.map(id => idMap[id]).filter(Boolean) };
+      const cur = curSvByName[keyName(imp.name)];
+      if (!cur) {
+        newServices.push({ ...remapped, id: uid() });
+      } else {
+        const isConflict = servicesDiff.conflicts.some(c => c.key === keyName(imp.name));
+        if (isConflict && choices[keyName(imp.name) + ":svc"] === "imported") {
+          newServices = newServices.map(sv => sv.id === cur.id ? { ...remapped, id: cur.id } : sv);
+        }
+      }
+    });
+
+    setS(p => ({ ...p, consumables: newConsumables, tiles: newTiles, services: newServices }));
+    setPricingReview(null);
+  }
+
+
 
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
@@ -507,83 +882,25 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
       {/* ── Consumables & Rates ── */}
       {tab === "consumables" && (
         <>
-          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 16, fontStyle: "italic" }}>
-            All materials used across your jobs. Services pull from this list. Thinset and grout use bag pricing; others can be per sqft or flat.
+          <div style={italicHintStyle}>
+            All materials used across your jobs. Services pull from this list.
           </div>
 
-          {s.consumables.map(c => (
-            <div key={c.id} style={{ marginBottom: 10, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 14px" }}>
-              {/* Row 1: Name + delete */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <input
-                    placeholder="Material name"
-                    value={c.name}
-                    onChange={e => updateC(c.id, "name", e.target.value)}
-                    style={{ ...iStyle, fontSize: 14, fontWeight: 600, color: "#d4c49a" }}
-                  />
-                </div>
-                <button onClick={() => deleteC(c.id)} style={delBtnStyle}>✕</button>
-              </div>
-              {/* Row 2: Price type + cost + coverage */}
-              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 8, alignItems: "start" }}>
-                {/* Price type */}
-                <div>
-                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Price Type</div>
-                  <select value={c.priceType} onChange={e => updateC(c.id, "priceType", e.target.value)}
-                    style={{ ...iStyle, cursor: "pointer", fontSize: 12 }}>
-                    {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "Bag" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
-                  </select>
-                </div>
-                {/* Cost */}
-                <div>
-                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
-                    {c.priceType === "bag" ? "Bag Price" : "Unit Cost"}
+          {CONSUMABLE_CATEGORIES.filter(cat => s.consumables.some(c => (c.category || "Other") === cat)).map(cat => (
+            <div key={cat} style={{ marginBottom: 18 }}>
+              <div style={groupHeaderStyle}>{cat}</div>
+              {s.consumables.filter(c => (c.category || "Other") === cat).map(c => (
+                <button key={c.id} onClick={() => setMatModal({ mode: "edit", id: c.id })} style={rowStyle}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={rowTitleStyle}>{c.name || "Unnamed material"}</div>
+                    <div style={rowSubtitleStyle}>{materialPriceLine(c)}</div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                    <span style={{ color: "#5a4f38", fontSize: 12, flexShrink: 0 }}>$</span>
-                    <input type="number" placeholder="0.00"
-                      value={c.priceType === "bag" ? c.bagPrice : c.unitCost}
-                      onChange={e => updateC(c.id, c.priceType === "bag" ? "bagPrice" : "unitCost", e.target.value)}
-                      style={{ ...iStyle, flex: 1 }} />
-                  </div>
-                </div>
-                {/* Coverage or unit label */}
-                {c.priceType === "bag" ? (
-                  <div>
-                    <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Coverage</div>
-                    <input type="number" placeholder="sqft/bag"
-                      value={c.bagCoverage}
-                      onChange={e => updateC(c.id, "bagCoverage", e.target.value)}
-                      style={iStyle} />
-                    <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", marginTop: 3 }}>sqft per bag</div>
-                  </div>
-                ) : (
-                  <div style={{ paddingTop: 22 }}>
-                    <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>
-                      {c.priceType === "sqft" ? "charged per sqft" : "flat per job"}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {/* Row 3: Note */}
-              {c.note !== undefined && (
-                <div style={{ marginTop: 8 }}>
-                  <input placeholder="Note (optional)" value={c.note} onChange={e => updateC(c.id, "note", e.target.value)}
-                    style={{ ...iStyle, fontSize: 11, color: "#8a7d65" }} />
-                </div>
-              )}
-              {/* Row 4: Category */}
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Category</div>
-                <select value={c.category || "Other"} onChange={e => updateC(c.id, "category", e.target.value)}
-                  style={{ ...iStyle, cursor: "pointer", fontSize: 12 }}>
-                  {CONSUMABLE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
+                  <span style={chevronStyle}>›</span>
+                </button>
+              ))}
             </div>
           ))}
-          <button onClick={addC} style={addBtnStyle}>+ Add Material</button>
+          <button onClick={() => setMatModal({ mode: "add" })} style={addBtnStyle}>+ Add Material</button>
 
           <div style={{ marginTop: 28 }}>
             <SettSection title="Misc & Markup Defaults">
@@ -599,62 +916,67 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
       {/* ── Tile Types ── */}
       {tab === "tiles" && (
         <>
-          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 16, fontStyle: "italic" }}>
+          <div style={italicHintStyle}>
             Tile types set the labor rate only. Tile material cost and waste % are entered per job on the estimator.
           </div>
           {s.tiles.map(t => (
-            <div key={t.id} style={{ marginBottom: 12, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: "14px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <select value={t.icon} onChange={e => updateT(t.id, "icon", e.target.value)}
-                  style={{ background: "#1a1610", border: "1px solid #2e2518", borderRadius: 4, color: "#f0ede6", fontSize: 18, padding: "4px 6px", cursor: "pointer", outline: "none" }}>
-                  {TILE_ICONS.map(ic => <option key={ic} value={ic}>{ic}</option>)}
-                </select>
-                <input placeholder="Tile name" value={t.name} onChange={e => updateT(t.id, "name", e.target.value)}
-                  style={{ ...iStyle, flex: 1, fontSize: 14, fontWeight: 700 }} />
-                <button onClick={() => deleteT(t.id)} style={delBtnStyle}>✕</button>
+            <button key={t.id} onClick={() => setTileModal({ mode: "edit", id: t.id })} style={rowStyle}>
+              <div style={{ minWidth: 0 }}>
+                <div style={rowTitleStyle}>{t.icon}  {t.name || "Unnamed tile"}</div>
+                <div style={rowSubtitleStyle}>${nv(t.labor)}/sqft labor{t.notes ? ` · ${t.notes}` : ""}</div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
-                <SField label="Labor $/sqft" value={t.labor} onChange={v => updateT(t.id, "labor", v)} hint="Install labor rate" />
-                <SField label="Note (optional)" value={t.notes} onChange={v => updateT(t.id, "notes", v)} hint="Shown on estimator" isText />
-              </div>
-            </div>
+              <span style={chevronStyle}>›</span>
+            </button>
           ))}
-          <button onClick={addT} style={addBtnStyle}>+ Add Tile Type</button>
+          <button onClick={() => setTileModal({ mode: "add" })} style={addBtnStyle}>+ Add Tile Type</button>
         </>
       )}
 
       {/* ── Services ── */}
       {tab === "services" && (
         <>
-          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 16, fontStyle: "italic" }}>
+          <div style={italicHintStyle}>
             Each service has a labor rate and a list of materials pulled from your Consumables list.
           </div>
           {s.services.map(sv => (
-            <div key={sv.id} style={{ marginBottom: 16, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden" }}>
-              {/* Header */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#13110d", borderBottom: "1px solid #2e2518" }}>
-                <input placeholder="Service name" value={sv.name} onChange={e => updateSv(sv.id, "name", e.target.value)}
-                  style={{ ...iStyle, flex: 1, fontSize: 14, fontWeight: 700, color: "#c19748" }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", whiteSpace: "nowrap" }}>Labor $/sqft</span>
-                  <input type="number" placeholder="0.00" value={sv.laborPerSqFt}
-                    onChange={e => updateSv(sv.id, "laborPerSqFt", e.target.value)}
-                    style={{ ...iStyle, width: 70 }} />
+            <button key={sv.id} onClick={() => setSvModal({ mode: "edit", id: sv.id })} style={rowStyle}>
+              <div style={{ minWidth: 0 }}>
+                <div style={rowTitleStyle}>{sv.name || "Unnamed service"}</div>
+                <div style={rowSubtitleStyle}>
+                  ${nv(sv.laborPerSqFt)}/sqft labor · {sv.consumableIds.length} material{sv.consumableIds.length !== 1 ? "s" : ""}
                 </div>
-                <button onClick={() => deleteSv(sv.id)} style={delBtnStyle}>✕</button>
               </div>
-              {/* Consumables assignment */}
-              <div style={{ padding: "12px 14px" }}>
-                <MaterialPicker
-                  consumables={s.consumables}
-                  assignedIds={sv.consumableIds}
-                  onToggle={cId => toggleConsumableOnService(sv.id, cId)}
-                />
-              </div>
-            </div>
+              <span style={chevronStyle}>›</span>
+            </button>
           ))}
-          <button onClick={addSv} style={addBtnStyle}>+ Add Service</button>
+          <button onClick={() => setSvModal({ mode: "add" })} style={addBtnStyle}>+ Add Service</button>
         </>
+      )}
+
+      {matModal && (
+        <MaterialFormModal
+          material={matModal.mode === "edit" ? s.consumables.find(c => c.id === matModal.id) : null}
+          onSave={f => { saveC(f); setMatModal(null); }}
+          onDelete={id => { deleteC(id); setMatModal(null); }}
+          onClose={() => setMatModal(null)}
+        />
+      )}
+      {tileModal && (
+        <TileFormModal
+          tile={tileModal.mode === "edit" ? s.tiles.find(t => t.id === tileModal.id) : null}
+          onSave={f => { saveT(f); setTileModal(null); }}
+          onDelete={id => { deleteT(id); setTileModal(null); }}
+          onClose={() => setTileModal(null)}
+        />
+      )}
+      {svModal && (
+        <ServiceFormModal
+          service={svModal.mode === "edit" ? s.services.find(sv => sv.id === svModal.id) : null}
+          consumables={s.consumables}
+          onSave={f => { saveSv(f); setSvModal(null); }}
+          onDelete={id => { deleteSv(id); setSvModal(null); }}
+          onClose={() => setSvModal(null)}
+        />
       )}
 
       <div style={{ marginTop: 32 }}>
@@ -714,6 +1036,164 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
               }}
             />
           </div>
+        </div>
+
+        {/* ── Share Pricing Setup ── */}
+        <div style={{ marginTop: 12, padding: "14px 16px", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>
+            Share Pricing Setup
+          </div>
+          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 12, fontStyle: "italic" }}>
+            Materials, tile types & services only — good for setting up someone else's phone. Doesn't include contractor info, estimates, or customers.
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={exportPricingSetup} style={{
+              flex: 1, padding: "11px 0",
+              background: "#1a1610", border: "1px solid #3a3020",
+              borderRadius: 8, cursor: "pointer",
+              color: "#c19748", fontSize: 13, fontWeight: 600,
+              fontFamily: "sans-serif", letterSpacing: 1,
+            }}>⬇ Export</button>
+            <button onClick={() => pricingImportRef.current?.click()} style={{
+              flex: 1, padding: "11px 0",
+              background: "#1a1610", border: "1px solid #3a3020",
+              borderRadius: 8, cursor: "pointer",
+              color: "#c19748", fontSize: 13, fontWeight: 600,
+              fontFamily: "sans-serif", letterSpacing: 1,
+            }}>⬆ Import</button>
+            <input
+              ref={pricingImportRef}
+              type="file"
+              accept=".json"
+              style={{ display: "none" }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => startPricingImport(ev.target.result);
+                reader.readAsText(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {pricingReview && (
+        <PricingImportReview
+          review={pricingReview}
+          onChoicesChange={choices => setPricingReview(p => ({ ...p, choices }))}
+          onConfirm={applyPricingImport}
+          onCancel={() => setPricingReview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PricingImportReview({ review, onChoicesChange, onConfirm, onCancel }) {
+  const { consumablesDiff, tilesDiff, servicesDiff, choices } = review;
+  const allConflicts = [
+    ...consumablesDiff.conflicts.map(c => ({ ...c, type: "mat", label: "Material" })),
+    ...tilesDiff.conflicts.map(c => ({ ...c, type: "tile", label: "Tile Type" })),
+    ...servicesDiff.conflicts.map(c => ({ ...c, type: "svc", label: "Service" })),
+  ];
+  const totalIdentical = consumablesDiff.identicalCount + tilesDiff.identicalCount + servicesDiff.identicalCount;
+  const totalNew = consumablesDiff.newItems.length + tilesDiff.newItems.length + servicesDiff.newItems.length;
+
+  function setChoice(key, val) { onChoicesChange({ ...choices, [key]: val }); }
+  function setAll(val) {
+    const next = { ...choices };
+    allConflicts.forEach(c => { next[c.key + ":" + c.type] = val; });
+    onChoicesChange(next);
+  }
+  const allMine = allConflicts.every(c => choices[c.key + ":" + c.type] === "mine");
+  const allImported = allConflicts.every(c => choices[c.key + ":" + c.type] === "imported");
+
+  function conflictSummary(c) {
+    if (c.type === "mat") return { mine: materialPriceLine(c.current), imported: materialPriceLine(c.imported) };
+    if (c.type === "tile") return { mine: `$${nv(c.current.labor)}/sqft`, imported: `$${nv(c.imported.labor)}/sqft` };
+    return { mine: `$${nv(c.current.laborPerSqFt)}/sqft, ${c.current.consumableIds.length} materials`, imported: `$${nv(c.imported.laborPerSqFt)}/sqft, ${c.imported.consumableIds.length} materials` };
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 200,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 520, background: "#1a1208", border: "1px solid #3a2e1a",
+        borderRadius: 14, padding: 22, maxHeight: "88vh", overflowY: "auto", fontFamily: "sans-serif",
+      }}>
+        <div style={{ fontSize: 16, color: "#f5f0e8", fontWeight: 700, marginBottom: 4 }}>Review Import</div>
+        <div style={{ fontSize: 12, color: "#5a4f38", marginBottom: 18, lineHeight: 1.5 }}>
+          {totalIdentical} item{totalIdentical !== 1 ? "s" : ""} already match and won't change. {totalNew} new item{totalNew !== 1 ? "s" : ""} will be added. {allConflicts.length} item{allConflicts.length !== 1 ? "s" : ""} need a decision below.
+        </div>
+
+        {allConflicts.length > 0 && (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button onClick={() => setAll("mine")} style={{
+                padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "sans-serif",
+                border: `1px solid ${allMine ? "#c19748" : "#2e2518"}`,
+                background: allMine ? "rgba(193,151,72,0.13)" : "transparent",
+                color: allMine ? "#c19748" : "#8a7d5e",
+              }}>Keep Mine for All</button>
+              <button onClick={() => setAll("imported")} style={{
+                padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "sans-serif",
+                border: `1px solid ${allImported ? "#c19748" : "#2e2518"}`,
+                background: allImported ? "rgba(193,151,72,0.13)" : "transparent",
+                color: allImported ? "#c19748" : "#8a7d5e",
+              }}>Use Imported for All</button>
+            </div>
+            <div style={{ fontSize: 10, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Needs Your Decision</div>
+            {allConflicts.map(c => {
+              const choiceKey = c.key + ":" + c.type;
+              const choice = choices[choiceKey] || "mine";
+              const summary = conflictSummary(c);
+              return (
+                <div key={choiceKey} style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                  <div style={{ fontSize: 13.5, color: "#f5f0e8", fontWeight: 700, marginBottom: 2 }}>{c.current.name}</div>
+                  <div style={{ fontSize: 10, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{c.label}</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setChoice(choiceKey, "mine")} style={{
+                      flex: 1, textAlign: "left", padding: "8px 10px", borderRadius: 6, cursor: "pointer",
+                      border: `1px solid ${choice === "mine" ? "#c19748" : "#2e2518"}`,
+                      background: choice === "mine" ? "rgba(193,151,72,0.12)" : "transparent",
+                    }}>
+                      <div style={{ fontSize: 10, color: choice === "mine" ? "#c19748" : "#5a4f38", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                        {choice === "mine" && "✓ "}Keep Mine
+                      </div>
+                      <div style={{ fontSize: 12, color: "#8a7d5e" }}>{summary.mine}</div>
+                    </button>
+                    <button onClick={() => setChoice(choiceKey, "imported")} style={{
+                      flex: 1, textAlign: "left", padding: "8px 10px", borderRadius: 6, cursor: "pointer",
+                      border: `1px solid ${choice === "imported" ? "#c19748" : "#2e2518"}`,
+                      background: choice === "imported" ? "rgba(193,151,72,0.12)" : "transparent",
+                    }}>
+                      <div style={{ fontSize: 10, color: choice === "imported" ? "#c19748" : "#5a4f38", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                        {choice === "imported" && "✓ "}Use Imported
+                      </div>
+                      <div style={{ fontSize: 12, color: "#8a7d5e" }}>{summary.imported}</div>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <button onClick={onCancel} style={{
+            flex: 1, padding: 13, background: "transparent", border: "1px solid #2e2518",
+            borderRadius: 8, color: "#8a7d5e", fontSize: 12, fontWeight: 700, letterSpacing: 1,
+            textTransform: "uppercase", cursor: "pointer", fontFamily: "sans-serif",
+          }}>Cancel</button>
+          <button onClick={onConfirm} style={{
+            flex: 2, padding: 13, background: "linear-gradient(135deg, #c19748, #a07830)",
+            border: "none", borderRadius: 8, color: "#0f0f0f", fontSize: 12, fontWeight: 700,
+            letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", fontFamily: "sans-serif",
+          }}>Confirm Import</button>
         </div>
       </div>
     </div>
@@ -1460,7 +1940,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -3118,6 +3598,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.6.0 — Materials, Tile Types, and Services redesigned as compact grouped lists with an Add/Edit popup form instead of always-expanded rows; new Share Pricing Setup export/import lets you send just your materials/tiles/services to another device with a conflict-review screen; added a Check Price button that opens Home Depot, Lowe's, or Floor & Decor search for a material or tile",
           "v1.5.0 — Redesigned navigation: bottom tab bar, Settings is now a drill-down menu, Help moved to a header button; fixed version display drift, mount-time effects now use useEffect, import now confirms before overwriting data, added a crash-recovery screen, draft counter included in backups, history cap now trims device storage too",
           "v1.4.0 — (see CHANGELOG.md on GitHub for details of this release)",
           "v1.3.0 — IndexedDB storage, Customer database, customer email to mail, full input snapshots, editable history, backup includes estimates + customers",
@@ -3274,5 +3755,4 @@ function EmptyState({ msg }) {
 
 const inputStyle = { background: "#1a1610", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 16px", color: "#f0ede6", fontSize: 16, fontFamily: "Georgia,serif", width: "100%", boxSizing: "border-box", outline: "none" };
 const iStyle     = { background: "#1a1610", border: "1px solid #2e2518", borderRadius: 4, padding: "7px 10px",  color: "#f0ede6", fontSize: 13, fontFamily: "Georgia,serif", width: "100%", boxSizing: "border-box", outline: "none" };
-const delBtnStyle = { background: "transparent", border: "1px solid #3a1010", borderRadius: 4, color: "#804040", fontSize: 15, cursor: "pointer", padding: "4px 10px", flexShrink: 0 };
 const addBtnStyle = { width: "100%", padding: "12px", marginTop: 4, background: "transparent", border: "1px dashed #3a2e18", borderRadius: 8, cursor: "pointer", color: "#c19748", fontSize: 13, fontFamily: "sans-serif", fontWeight: 600, letterSpacing: 1 };
