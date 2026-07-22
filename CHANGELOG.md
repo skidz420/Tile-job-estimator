@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0] - 2026-07-22
+### Added
+- **Share Pricing Setup** — a new export/import option separate from Full Backup. Sends only Materials, Tile Types, and Services (no contractor info, no estimates, no customers) — meant for setting up someone else's phone with your pricing. Importing shows a review screen: items that already match are skipped automatically, new items are added automatically, and only real conflicts (same name, different value) ask you to choose — individually or with "Keep Mine for All" / "Use Imported for All"
+- **Check Price button** — on Materials and Tile Types, opens a store picker (Home Depot, Lowe's, Floor & Decor) that searches that store's site for the item's name in a new tab
+### Changed
+- **Materials, Tile Types, and Services redesigned** — each is now a compact list grouped by category (Materials) instead of always-expanded edit rows. Tapping "+ Add" or an existing item opens the same popup form; nothing is added to the list until the form is saved. Deleting an item now happens from inside its edit form
+
 ## [1.5.0] - 2026-07-21
 ### Changed
 - **Navigation redesign** — main navigation moved from a horizontally-scrolling top tab bar to a fixed bottom tab bar (Estimate, Customers, History, Settings), sized for one-tap thumb reach
