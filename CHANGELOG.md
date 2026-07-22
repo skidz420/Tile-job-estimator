@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0] - 2026-07-22
+### Added
+- **Job Types** — a new Settings tab for presets like Kitchen Floor, Backsplash, or Shower. Each one is just a name/icon plus a list of services to auto-enable — it has no cost of its own. Selecting a Job Type on the estimator (new optional step, right after Customer) auto-checks its assigned services without ever unchecking anything you already turned on. Works alongside the existing tile-to-service auto-enable from v1.9.0
+- **Thinset/Grout brand selection** — materials can now be tagged with a Role (Thinset or Grout) in Consumables & Rates. Tag as many brands as you stock, and a dropdown appears on the estimator to pick which one applies to a given job — previously the app always used a single fixed material regardless of what else was in your list. The picked brand is saved with the estimate/draft and correctly restored when reloaded, and flows through to the cost breakdown, shopping list, and every sent-estimate text format
+### Fixed
+- **Required Services checklist cut off on mobile** — this was supposed to ship in 1.9.1 but the fix didn't make it into the deployed file; it's included now. The same nested-scroll issue also affected the material picker in the Service editor and has been fixed there too
+
 ## [1.9.1] - 2026-07-22
 ### Fixed
 - **Required Services checklist cut off on mobile** — the checklist in the Tile Type editor had its own nested scroll area (240px max-height) inside the already-scrolling modal. Nested scroll containers don't reliably respond to touch on mobile, so the list appeared to stop after ~6 services even when more existed below. It now flows naturally within the modal's own scroll so every service is reachable
