@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.9.1] - 2026-07-22
+### Fixed
+- **Required Services checklist cut off on mobile** — the checklist in the Tile Type editor had its own nested scroll area (240px max-height) inside the already-scrolling modal. Nested scroll containers don't reliably respond to touch on mobile, so the list appeared to stop after ~6 services even when more existed below. It now flows naturally within the modal's own scroll so every service is reachable
+
 ## [1.9.0] - 2026-07-22
 ### Added
 - **Per-material custom waste %** — materials with waste enabled can now use their own waste percentage instead of the job default, via a "Use a custom waste %" checkbox in the material editor
