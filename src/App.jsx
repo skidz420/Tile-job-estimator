@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component {
 
 // ─── IndexedDB Database Layer ─────────────────────────────────────────────────
 const DB_NAME = "tje_db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -63,10 +63,23 @@ function openDB() {
         ds.createIndex("date", "date");
         ds.createIndex("customerName", "customerName");
       }
+      if (!db.objectStoreNames.contains("shoppingLists")) {
+        const sl = db.createObjectStore("shoppingLists", { keyPath: "id" });
+        sl.createIndex("estimateId", "estimateId");
+      }
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror  = e => reject(e.target.error);
   });
+}
+
+function dbGet(store, id) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).get(id);
+    req.onsuccess = e => resolve(e.target.result || null);
+    req.onerror   = e => reject(e.target.error);
+  }));
 }
 
 function dbGetAll(store) {
@@ -252,6 +265,100 @@ function consumableCost(c, area, linearFeet = 0, wastePct = 0, qty = 1) {
   if (c.priceType === "sqft") return (area || 0) * nv(c.unitCost);
   if (c.priceType === "flat") return nv(c.unitCost) * (nv(qty, 1) || 1);
   return 0;
+}
+
+// Builds the "what to buy" list for a saved estimate/draft: tile + always-on
+// thinset/grout + every material assigned to an enabled service, with overrides
+// applied exactly as the estimator applied them. Quantities use the same
+// coverage-unit rounding as the rest of the app.
+function buildShoppingListItems(estimate, settings) {
+  if (!estimate) return [];
+  const area        = nv(estimate.sqft);
+  const linearFeet   = nv(estimate.linearFt);
+  const wastePct     = nv(estimate.wastePercent, 10) / 100;
+  const serviceState = estimate.serviceState || {};
+  const consumables  = (settings && settings.consumables) || [];
+  const services     = (settings && settings.services) || [];
+
+  const lines = [];
+  function addLine(c, qty, unitLabel, cost) {
+    if (!c) return;
+    const existing = lines.find(l => l.materialId === c.id);
+    if (existing) {
+      existing.qty += qty;
+      existing.cost += cost;
+    } else {
+      lines.push({ id: "m_" + c.id, materialId: c.id, name: c.name, qty, unitLabel, cost: cost || 0, note: c.note || "" });
+    }
+  }
+  function addMaterial(c, override, qtyOverride) {
+    if (!c) return;
+    const effectiveC = override !== undefined ? { ...c, bagPrice: override, unitCost: override } : c;
+    const flatQty = c.priceType === "flat" ? nv(qtyOverride, 1) : 1;
+    const cost = consumableCost(effectiveC, area, linearFeet, wastePct, flatQty);
+    if (c.priceType === "bag") {
+      const units = materialUnits(effectiveC, area, linearFeet, wastePct);
+      addLine(c, units, pluralUnit(unitLabelOf(c), units), cost);
+    } else if (c.priceType === "sqft") {
+      addLine(c, area, "sqft", cost);
+    } else {
+      addLine(c, flatQty, flatQty === 1 ? "" : "", cost);
+    }
+  }
+
+  // Tile itself (skip if customer-supplied / no price entered)
+  const tileCostPerSqFt = nv(estimate.tilePriceSqFt);
+  if (estimate.tileName && tileCostPerSqFt > 0) {
+    const tileWithWaste = area * (1 + wastePct);
+    lines.push({
+      id: "tile_" + (estimate.tileId || "x"), materialId: "tile", name: estimate.tileName,
+      qty: Math.ceil(tileWithWaste), unitLabel: "sqft", cost: tileWithWaste * tileCostPerSqFt, note: "Includes waste",
+    });
+  }
+
+  // Thinset & grout are always part of the job
+  ["thinset", "grout"].forEach(id => {
+    const c = consumables.find(x => x.id === id);
+    if (c) addMaterial(c);
+  });
+
+  // Materials from every enabled service
+  services.filter(sv => serviceState[sv.id]?.enabled).forEach(sv => {
+    (sv.consumableIds || []).forEach(cId => {
+      const c = consumables.find(x => x.id === cId);
+      if (!c) return;
+      const override = serviceState[sv.id]?.overrides?.[cId];
+      const qtyOverride = serviceState[sv.id]?.overrides?.["qty__" + cId];
+      addMaterial(c, override, qtyOverride);
+    });
+  });
+
+  return lines;
+}
+
+// Job status — manually set, tracks where a sent estimate stands with the customer.
+const JOB_STATUSES = [
+  { key: "awaiting", label: "Awaiting Approval", icon: "📤", color: "#c19748" },
+  { key: "approved", label: "Approved",          icon: "✅", color: "#6dc47a" },
+  { key: "complete", label: "Complete",          icon: "🏁", color: "#7aa8d9" },
+  { key: "declined", label: "Declined",          icon: "✕",  color: "#c15b48" },
+];
+function jobStatusOf(e) {
+  return JOB_STATUSES.find(s => s.key === (e && e.jobStatus)) || JOB_STATUSES[0];
+}
+
+// Materials status — fully automatic, derived from the shopping list's checked state.
+// Returns null if there's nothing to buy on this job yet (no materials at all).
+function materialsStatusOf(estimate, settings, shoppingListRec) {
+  const autoItems = buildShoppingListItems(estimate, settings);
+  const customItems = (shoppingListRec && shoppingListRec.customItems) || [];
+  const checked = (shoppingListRec && shoppingListRec.checked) || {};
+  const all = [...autoItems, ...customItems];
+  if (all.length === 0) return null;
+  const stillNeeded = all.some(i => !checked[i.id]);
+  return stillNeeded
+    ? { key: "need", label: "Need to Buy", icon: "🛒", color: "#c19748" }
+    : { key: "ready", label: "All Purchased", icon: "📦", color: "#6dc47a" };
 }
 
 // ─── Check Price button (store picker popup) ─────────────────────────────────
@@ -1441,6 +1548,21 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
   const [resendMode, setResendMode] = useState("email");
   const [sendingDraftId, setSendingDraftId] = useState(null);
   const [draftSendMode, setDraftSendMode]   = useState("email");
+  const [shoppingListFor, setShoppingListFor] = useState(null);
+  const [shoppingListsById, setShoppingListsById] = useState({});
+
+  function refreshShoppingLists() {
+    dbGetAll("shoppingLists").then(all => {
+      const byId = {};
+      (all || []).forEach(rec => { byId[rec.estimateId] = rec; });
+      setShoppingListsById(byId);
+    }).catch(() => {});
+  }
+  useEffect(() => { refreshShoppingLists(); }, []);
+
+  function setJobStatus(id, key) {
+    onUpdate(id, { jobStatus: key });
+  }
 
   const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const q = search.trim().toLowerCase();
@@ -1529,6 +1651,10 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>↑ Load & Edit</button>
+                  <button onClick={e2 => { e2.stopPropagation(); setShoppingListFor(d); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>🛒 List</button>
                   <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this draft?")) onDeleteDraft(d.id); }} style={{
                     padding: "8px 12px", background: "none", border: "1px solid #3a2518",
                     borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
@@ -1583,6 +1709,8 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
         const isExpanded = expandedId === e.id;
         const isResending = resendId === e.id;
         const isEditing = editingId === e.id;
+        const jStatus = jobStatusOf(e);
+        const mStatus = materialsStatusOf(e, settings, shoppingListsById[e.id]);
         return (
           <div key={e.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#c19748" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
             {/* Summary row */}
@@ -1594,6 +1722,16 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                   <span style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {e.customerName || "No customer name"}
                   </span>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: jStatus.color, background: jStatus.color + "1a", border: `1px solid ${jStatus.color}40`, borderRadius: 10, padding: "2px 8px", fontFamily: "sans-serif" }}>
+                    {jStatus.icon} {jStatus.label}
+                  </span>
+                  {mStatus && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: mStatus.color, background: mStatus.color + "1a", border: `1px solid ${mStatus.color}40`, borderRadius: 10, padding: "2px 8px", fontFamily: "sans-serif" }}>
+                      {mStatus.icon} {mStatus.label}
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   {e.projectDesc && <span style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc}</span>}
@@ -1620,6 +1758,10 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>↑ Load into Estimator</button>
+                  <button onClick={e2 => { e2.stopPropagation(); setShoppingListFor(e); }} style={{
+                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                  }}>🛒 List</button>
                   <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
                     borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
@@ -1628,6 +1770,21 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     padding: "8px 12px", background: "none", border: "1px solid #3a2518",
                     borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
                   }}>✕</button>
+                </div>
+
+                {/* Job status picker */}
+                <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap" }}>
+                  {JOB_STATUSES.map(st => {
+                    const active = (e.jobStatus || "awaiting") === st.key;
+                    return (
+                      <button key={st.key} onClick={e2 => { e2.stopPropagation(); setJobStatus(e.id, st.key); }} style={{
+                        padding: "6px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
+                        border: `1px solid ${active ? st.color : "#2e2518"}`,
+                        background: active ? st.color + "1a" : "transparent",
+                        color: active ? st.color : "#5a4f38",
+                      }}>{st.icon} {st.label}</button>
+                    );
+                  })}
                 </div>
 
                 {/* Edit form */}
@@ -1703,6 +1860,175 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
           </div>
         );
       })}
+
+      {shoppingListFor && (
+        <ShoppingListModal estimate={shoppingListFor} settings={settings} onClose={() => { setShoppingListFor(null); refreshShoppingLists(); }} />
+      )}
+    </div>
+  );
+}
+
+// ─── Shopping List Modal ───────────────────────────────────────────────────────
+function ShoppingListModal({ estimate, settings, onClose }) {
+  const listId = "sl_" + estimate.id;
+  const autoItems = buildShoppingListItems(estimate, settings);
+  const [checked, setChecked]         = useState({});
+  const [customItems, setCustomItems] = useState([]);
+  const [loaded, setLoaded]           = useState(false);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [newItem, setNewItem]         = useState({ name: "", qty: "1", cost: "" });
+
+  const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  useEffect(() => {
+    let cancelled = false;
+    dbGet("shoppingLists", listId).then(rec => {
+      if (cancelled) return;
+      if (rec) {
+        setChecked(rec.checked || {});
+        setCustomItems(rec.customItems || []);
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+    return () => { cancelled = true; };
+  }, [listId]);
+
+  function persist(nextChecked, nextCustomItems) {
+    dbPut("shoppingLists", {
+      id: listId,
+      estimateId: estimate.id,
+      checked: nextChecked,
+      customItems: nextCustomItems,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+  }
+
+  function toggleItem(id) {
+    setChecked(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      persist(next, customItems);
+      return next;
+    });
+  }
+
+  function addCustomItem() {
+    if (!newItem.name.trim()) return;
+    const item = { id: "c_" + uid(), name: newItem.name.trim(), qty: nv(newItem.qty, 1), cost: nv(newItem.cost, 0) };
+    const next = [...customItems, item];
+    setCustomItems(next);
+    persist(checked, next);
+    setNewItem({ name: "", qty: "1", cost: "" });
+    setShowAdd(false);
+  }
+
+  function deleteCustomItem(id) {
+    const next = customItems.filter(i => i.id !== id);
+    setCustomItems(next);
+    persist(checked, next);
+  }
+
+  const allItems = [...autoItems, ...customItems.map(i => ({ ...i, unitLabel: "", note: "custom" }))];
+  const totalCost = allItems.reduce((s, i) => s + (i.cost || 0), 0);
+  const remainingCost = allItems.reduce((s, i) => s + (checked[i.id] ? 0 : (i.cost || 0)), 0);
+  const purchasedCount = allItems.filter(i => checked[i.id]).length;
+
+  function exportList() {
+    const stamp = new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    const label = estimate.estNum ? "Estimate #" + estimate.estNum : (estimate.draftNum || "Job");
+    let text = `SHOPPING LIST — ${label}\n`;
+    text += `${estimate.customerName ? "Customer: " + estimate.customerName + "\n" : ""}`;
+    text += `${estimate.projectDesc ? "Project: " + estimate.projectDesc + "\n" : ""}`;
+    text += `Generated: ${stamp}\n\n`;
+    allItems.forEach(i => {
+      const box = checked[i.id] ? "[x]" : "[ ]";
+      const qtyStr = i.unitLabel ? `${i.qty} ${i.unitLabel}` : `x${i.qty}`;
+      text += `${box} ${i.name} — ${qtyStr} — ${fmt(i.cost)}${i.note && i.note !== "custom" ? " (" + i.note + ")" : ""}\n`;
+    });
+    text += `\nTOTAL: ${fmt(totalCost)}\nREMAINING TO BUY: ${fmt(remainingCost)}\n`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `shopping-list-${(estimate.estNum || estimate.draftNum || "job").replace(/\W+/g, "-")}.txt`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const rowStyle = { display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: "1px solid #1e1a12" };
+  const iStyle = { width: "100%", padding: "8px 10px", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, color: "#d4c49a", fontSize: 13, fontFamily: "sans-serif", boxSizing: "border-box" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#1a1208", border: "1px solid #3a2e1a", borderRadius: 14, padding: 20, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 16, color: "#f5f0e8", fontWeight: 700, fontFamily: "sans-serif" }}>🛒 Shopping List</div>
+            <div style={{ fontSize: 12, color: "#8a7d65", fontFamily: "sans-serif", marginTop: 2 }}>
+              {estimate.customerName || "No customer"}{estimate.estNum ? " · #" + estimate.estNum : estimate.draftNum ? " · " + estimate.draftNum : ""}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8a7d5e", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif" }}>Total Cost</div>
+            <div style={{ fontSize: 17, color: "#e8c870", fontWeight: 700, fontFamily: "sans-serif" }}>{fmt(totalCost)}</div>
+          </div>
+          <div style={{ flex: 1, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif" }}>Still Need</div>
+            <div style={{ fontSize: 17, color: remainingCost > 0 ? "#c19748" : "#6dc47a", fontWeight: 700, fontFamily: "sans-serif" }}>{fmt(remainingCost)}</div>
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 6 }}>
+          {purchasedCount}/{allItems.length} picked up
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, marginBottom: 12 }}>
+          {!loaded ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 12 }}>Loading…</div>
+          ) : allItems.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 12 }}>No materials on this job yet.</div>
+          ) : allItems.map(i => (
+            <div key={i.id} style={rowStyle}>
+              <Checkbox checked={!!checked[i.id]} onClick={() => toggleItem(i.id)} />
+              <div style={{ flex: 1, minWidth: 0 }} onClick={() => toggleItem(i.id)}>
+                <div style={{ fontSize: 13, color: checked[i.id] ? "#5a4f38" : "#d4c49a", fontFamily: "sans-serif", fontWeight: 600, textDecoration: checked[i.id] ? "line-through" : "none" }}>
+                  {i.name}{i.note === "custom" && <span style={{ fontSize: 10, color: "#8a7d5e", marginLeft: 6 }}>(custom)</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>
+                  {i.unitLabel ? `${i.qty} ${i.unitLabel}` : `× ${i.qty}`}{i.note && i.note !== "custom" ? " · " + i.note : ""}
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: checked[i.id] ? "#5a4f38" : "#c19748", fontFamily: "sans-serif", fontWeight: 600, flexShrink: 0 }}>{fmt(i.cost)}</div>
+              {i.materialId === undefined && (
+                <button onClick={() => deleteCustomItem(i.id)} style={{ background: "none", border: "none", color: "#6b5f4a", fontSize: 14, cursor: "pointer", padding: "0 2px", flexShrink: 0 }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {showAdd ? (
+          <div style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+            <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
+              <input value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))} placeholder="Item name (e.g. Extra corner trim)" style={iStyle} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={newItem.qty} onChange={e => setNewItem(p => ({ ...p, qty: e.target.value }))} placeholder="Qty" type="number" style={iStyle} />
+                <input value={newItem.cost} onChange={e => setNewItem(p => ({ ...p, cost: e.target.value }))} placeholder="Cost $" type="number" style={iStyle} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowAdd(false)} style={{ flex: 1, padding: 9, background: "none", border: "1px solid #2e2518", borderRadius: 6, color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", cursor: "pointer" }}>Cancel</button>
+              <button onClick={addCustomItem} style={{ flex: 1, padding: 9, background: "linear-gradient(135deg,#c19748,#a07830)", border: "none", borderRadius: 6, color: "#0f0f0f", fontSize: 12, fontWeight: 700, fontFamily: "sans-serif", cursor: "pointer" }}>Add Item</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setShowAdd(true)} style={{ width: "100%", padding: 10, marginBottom: 10, background: "#13110d", border: "1px dashed #3a2e1a", borderRadius: 8, color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600, cursor: "pointer" }}>+ Add Custom Item</button>
+        )}
+
+        <button onClick={exportList} style={{ width: "100%", padding: 12, background: "#1e1608", border: "1px solid #c19748", borderRadius: 8, color: "#c19748", fontSize: 13, fontWeight: 700, fontFamily: "sans-serif", cursor: "pointer" }}>
+          ⬇ Export List
+        </button>
+      </div>
     </div>
   );
 }
@@ -1992,7 +2318,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -3664,10 +3990,30 @@ function HelpPage() {
       ],
     },
     {
+      title: "Shopping List",
+      icon: "🛒",
+      content: [
+        { type: "p", text: "Every sent estimate and saved draft has a 🛒 List button in its History row. Tapping it builds a materials buy-list straight from that job — no re-entry needed." },
+        { type: "h", text: "What's Included" },
+        { type: "p", text: "The tile itself (with waste already factored in), thinset and grout, and every material assigned to a service you turned on for that job — each with the quantity you'd actually need to purchase (bags, boxes, sheets, etc. rounded up to whole units)." },
+        { type: "h", text: "Checking Off Items" },
+        { type: "p", text: "Tap any line to mark it purchased. Your progress is saved automatically and picks back up next time you open that job's list." },
+        { type: "h", text: "Custom Items" },
+        { type: "p", text: "Anything not already in your pricing setup — an extra tool, a one-off material — can be added with a name, quantity, and cost." },
+        { type: "h", text: "Exporting" },
+        { type: "p", text: "The Export List button downloads a plain-text list with checkboxes, quantities, and costs — easy to print, text to yourself, or hand to whoever's picking up the order." },
+        { type: "h", text: "Job Status" },
+        { type: "p", text: "Sent estimates show a Job Status badge — Awaiting Approval, Approved, Complete, or Declined. Set it yourself from the buttons in the expanded estimate view; it never changes on its own." },
+        { type: "h", text: "Materials Status" },
+        { type: "p", text: "A second badge — Need to Buy or All Purchased — appears automatically once a job has a shopping list. It just reflects your checkboxes, so it's always in sync without any extra work." },
+      ],
+    },
+    {
       title: "Version History",
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.8.0 — New Shopping List: generate a materials buy-list from any sent estimate or draft, with the tile itself, thinset/grout, and every assigned service material auto-quantified; check items off as you buy them, add custom items, and export a text list to take to the supplier. Also added Job Status for sent estimates (Awaiting Approval / Approved / Complete / Declined, set manually) and Materials Status (Need to Buy / All Purchased, tracked automatically from your shopping list checkboxes) — both shown as badges in History",
           "v1.7.0 — Materials sold by coverage (bags, boxes, sheets, rolls, etc.) now round up to whole units so costs match what you'd actually buy; added an optional per-material waste % and a new Linear Feet job input for trim/edge/cove-base materials priced by the linear foot instead of area; flat-priced materials (corners, end caps) now support a per-job quantity",
           "v1.6.0 — Materials, Tile Types, and Services redesigned as compact grouped lists with an Add/Edit popup form instead of always-expanded rows; new Share Pricing Setup export/import lets you send just your materials/tiles/services to another device with a conflict-review screen; added a Check Price button that opens Home Depot, Lowe's, or Floor & Decor search for a material or tile",
           "v1.5.0 — Redesigned navigation: bottom tab bar, Settings is now a drill-down menu, Help moved to a header button; fixed version display drift, mount-time effects now use useEffect, import now confirms before overwriting data, added a crash-recovery screen, draft counter included in backups, history cap now trims device storage too",
