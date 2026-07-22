@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.7.0] - 2026-07-22
+### Added
+- **Coverage-based materials generalized beyond bags** — any material priced by coverage (price + sqft covered) can now be sold by bag, box, sheet, roll, bucket, gallon, case, or pail via a new "Sold By" selector, instead of always being labeled "bag"
+- **Purchase-accurate rounding** — coverage materials (thinset, grout, backer board, boxed items, etc.) now round UP to the next whole unit before calculating cost, since you buy whole bags/boxes/sheets, not fractional ones
+- **Per-material waste %** — an optional toggle on any coverage material applies the job's waste % before rounding up, for materials prone to cutting waste (sheet goods especially). Off by default for existing materials
+- **Linear Feet job input** — a new optional field alongside Square Footage, for trim, edge strips, cove base, and other materials priced by the linear foot instead of area. Materials can be set to "Measure By: Linear Feet" instead of area
+- **Per-job quantity for flat-priced materials** — materials priced flat per piece (outside corners, end caps, etc.) now support an editable quantity per job instead of always being counted once
+### Fixed
+- The "Send Estimate" export text was reading a stale/incorrect key for labor overrides, so a labor rate override made in the estimator wasn't always reflected in the sent estimate text — now fixed
+- Price overrides on coverage-based materials (bag/box/sheet/etc.) were being applied as a flat total instead of a per-unit price multiplied by units needed, causing the emailed/texted estimate to differ from the on-screen total in some cases — now consistent everywhere
+
 ## [1.6.0] - 2026-07-22
 ### Added
 - **Share Pricing Setup** — a new export/import option separate from Full Backup. Sends only Materials, Tile Types, and Services (no contractor info, no estimates, no customers) — meant for setting up someone else's phone with your pricing. Importing shows a review screen: items that already match are skipped automatically, new items are added automatically, and only real conflicts (same name, different value) ask you to choose — individually or with "Keep Mine for All" / "Use Imported for All"
