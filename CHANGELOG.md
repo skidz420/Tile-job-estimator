@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0] - 2026-07-22
+### Added
+- **Multi-area estimates** — a job can now be made up of several Areas (Kitchen Floor, Backsplash, Shower, etc.) in one estimate, each with its own square footage, tile type, thinset/grout brand, and services. Tap "+ Add Area" for jobs with more than one space
+- One combined customer price and true cost across the whole job, but the on-screen Cost Breakdown, the customer-facing proposal, and all four sent-estimate formats (itemized/basic email/SMS) now itemize each Area separately so the customer sees exactly what's covered where
+- The shopping list correctly merges materials across areas (e.g. two areas both using the same tile or thinset combine into one buy-list line instead of listing twice)
+- Old single-area estimates and drafts still load and display correctly — they're treated as a job with one Area
+
 ## [1.10.0] - 2026-07-22
 ### Added
 - **Job Types** — a new Settings tab for presets like Kitchen Floor, Backsplash, or Shower. Each one is just a name/icon plus a list of services to auto-enable — it has no cost of its own. Selecting a Job Type on the estimator (new optional step, right after Customer) auto-checks its assigned services without ever unchecking anything you already turned on. Works alongside the existing tile-to-service auto-enable from v1.9.0
