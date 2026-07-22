@@ -156,7 +156,7 @@ const SEED_TILES = [
 ];
 
 // Master consumables list — all materials live here
-// priceType: "bag" (bag price + coverage), "sqft" ($/sqft), "flat" ($/unit)
+// priceType: "bag" (unit price + sqft coverage — unitLabel picks bag/box/roll/etc.), "sqft" ($/sqft), "flat" ($/unit)
 const CONSUMABLE_CATEGORIES = [
   "Adhesives",
   "Grout & Finishing",
@@ -170,8 +170,8 @@ const CONSUMABLE_CATEGORIES = [
 ];
 
 const SEED_CONSUMABLES = [
-  { id: "thinset",    name: "Thinset / Mortar",        category: "Adhesives",           priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitCost: "",  note: "50 lb bag" },
-  { id: "grout",      name: "Grout",                   category: "Grout & Finishing",   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitCost: "",  note: "Varies by joint width" },
+  { id: "thinset",    name: "Thinset / Mortar",        category: "Adhesives",           priceType: "bag",  bagPrice: 25, bagCoverage: 40, unitLabel: "bag", unitCost: "",  note: "50 lb bag" },
+  { id: "grout",      name: "Grout",                   category: "Grout & Finishing",   priceType: "bag",  bagPrice: 18, bagCoverage: 50, unitLabel: "bag", unitCost: "",  note: "Varies by joint width" },
   { id: "backer",     name: "Cement Backer Board",     category: "Substrate & Backer",  priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.65, note: "" },
   { id: "membrane",   name: "Waterproof Membrane",     category: "Waterproofing",       priceType: "sqft", bagPrice: "",  bagCoverage: "", unitCost: 0.90, note: "" },
   { id: "memtape",    name: "Membrane Seam Tape",      category: "Waterproofing",       priceType: "flat", bagPrice: "",  bagCoverage: "", unitCost: 18,   note: "Per roll" },
@@ -196,7 +196,8 @@ const SEED_SERVICES = [
 
 const TILE_ICONS = ["⬜","🔲","🪨","◼","🔷","🟫","🟦","🟩","⬛","🔶","🔸","🔹"];
 const PRICE_TYPES = ["bag", "sqft", "flat"];
-const PRICE_TYPE_LABELS = { bag: "Bag (price + coverage)", sqft: "Per Sqft ($/sqft)", flat: "Flat ($/unit)" };
+const PRICE_TYPE_LABELS = { bag: "By Coverage (price + sqft covered)", sqft: "Per Sqft ($/sqft)", flat: "Flat ($/unit)" };
+const UNIT_LABEL_OPTIONS = ["bag", "box", "sheet", "roll", "bucket", "gallon", "case", "pail"];
 
 const PRICE_CHECK_STORES = [
   { key: "homedepot", label: "Home Depot", url: q => `https://www.homedepot.com/s/${encodeURIComponent(q)}` },
@@ -209,18 +210,47 @@ function fmt(n) { return (isNaN(n) || n == null) ? "$—" : n.toLocaleString("en
 function nv(v, fb = 0) { return parseFloat(v) || fb; }
 
 function newTile()        { return { id: uid(), name: "", icon: "⬜", labor: "", notes: "" }; }
-function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitCost: "", note: "" }; }
+function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitLabel: "bag", coverageBasis: "area", applyWaste: false, unitCost: "", note: "" }; }
 function newService()     { return { id: uid(), name: "", laborPerSqFt: "", consumableIds: [] }; }
 
-// Cost of a consumable for a given sqft area
-function consumableCost(c, area) {
+// Units of a coverage-type material (bag/box/roll/etc) needed for a given sqft area.
+// Always rounds UP — you buy whole units, so this reflects true purchase cost.
+function coverageUnits(area, coverage) {
+  return Math.ceil((area || 0) / Math.max(1, parseFloat(coverage) || 1));
+}
+
+// Label for a coverage-type material's unit (bag/box/roll/...), defaulting to "bag" for legacy data
+function unitLabelOf(c) { return (c && c.unitLabel) || "bag"; }
+
+// Pluralizes a unit label for display (box -> boxes, bag -> bags, etc.)
+function pluralUnit(label, count) {
+  const n = Math.round(count);
+  const l = label || "bag";
+  if (n === 1) return l;
+  return /[xsz]$|ch$|sh$/i.test(l) ? `${l}es` : `${l}s`;
+}
+
+// Picks area or linear feet as the quantity basis for a coverage material, then applies waste % if enabled
+function materialBasis(c, area, linearFeet, wastePct) {
+  let basis = (c && c.coverageBasis === "linear") ? (linearFeet || 0) : (area || 0);
+  if (c && c.applyWaste) basis = basis * (1 + (wastePct || 0));
+  return basis;
+}
+
+// Whole units needed for a coverage material, accounting for its basis (area/linear) and waste setting
+function materialUnits(c, area, linearFeet, wastePct) {
+  return coverageUnits(materialBasis(c, area, linearFeet, wastePct), c.bagCoverage);
+}
+
+// Cost of a consumable. linearFeet/wastePct only matter for coverage ("bag") materials;
+// qty only matters for flat per-piece materials (e.g. corners, end caps).
+function consumableCost(c, area, linearFeet = 0, wastePct = 0, qty = 1) {
   if (!c) return 0;
   if (c.priceType === "bag") {
-    const coverage = nv(c.bagCoverage, 1);
-    return (area / coverage) * nv(c.bagPrice);
+    return materialUnits(c, area, linearFeet, wastePct) * nv(c.bagPrice);
   }
-  if (c.priceType === "sqft") return area * nv(c.unitCost);
-  if (c.priceType === "flat") return nv(c.unitCost);
+  if (c.priceType === "sqft") return (area || 0) * nv(c.unitCost);
+  if (c.priceType === "flat") return nv(c.unitCost) * (nv(qty, 1) || 1);
   return 0;
 }
 
@@ -397,7 +427,7 @@ const primaryBtnStyle = {
 };
 
 function materialPriceLine(c) {
-  if (c.priceType === "bag") return `$${c.bagPrice || 0}/bag${c.bagCoverage ? ` · covers ${c.bagCoverage} sqft` : ""}`;
+  if (c.priceType === "bag") return `$${c.bagPrice || 0}/${unitLabelOf(c)}${c.bagCoverage ? ` · covers ${c.bagCoverage} sqft` : ""}`;
   if (c.priceType === "sqft") return `$${c.unitCost || 0}/sqft`;
   return `$${c.unitCost || 0} flat`;
 }
@@ -449,13 +479,21 @@ function MaterialFormModal({ material, onSave, onDelete, onClose }) {
       <div style={{ marginBottom: 14 }}>
         <div style={fieldLabelStyle}>Price Type</div>
         <select value={f.priceType} onChange={e => set("priceType", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
-          {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "Bag" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
+          {PRICE_TYPES.map(pt => <option key={pt} value={pt}>{pt === "bag" ? "By Coverage" : pt === "sqft" ? "Per Sqft" : "Flat"}</option>)}
         </select>
       </div>
+      {f.priceType === "bag" && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={fieldLabelStyle}>Sold By</div>
+          <select value={f.unitLabel || "bag"} onChange={e => set("unitLabel", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
+            {UNIT_LABEL_OPTIONS.map(u => <option key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: f.priceType === "bag" ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-            <div style={{ ...fieldLabelStyle, marginBottom: 0 }}>{f.priceType === "bag" ? "Bag Price" : "Unit Cost"}</div>
+            <div style={{ ...fieldLabelStyle, marginBottom: 0 }}>{f.priceType === "bag" ? `${(f.unitLabel || "bag").charAt(0).toUpperCase() + (f.unitLabel || "bag").slice(1)} Price` : "Unit Cost"}</div>
             <CheckPriceButton term={f.name} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -468,11 +506,26 @@ function MaterialFormModal({ material, onSave, onDelete, onClose }) {
         </div>
         {f.priceType === "bag" && (
           <div>
-            <div style={fieldLabelStyle}>Coverage (sqft/bag)</div>
-            <input type="number" placeholder="sqft/bag" value={f.bagCoverage} onChange={e => set("bagCoverage", e.target.value)} style={iStyle} />
+            <div style={fieldLabelStyle}>Coverage ({f.coverageBasis === "linear" ? "ln ft" : "sqft"}/{f.unitLabel || "bag"})</div>
+            <input type="number" placeholder={`${f.coverageBasis === "linear" ? "ln ft" : "sqft"}/${f.unitLabel || "bag"}`} value={f.bagCoverage} onChange={e => set("bagCoverage", e.target.value)} style={iStyle} />
           </div>
         )}
       </div>
+      {f.priceType === "bag" && (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Measure By</div>
+            <select value={f.coverageBasis || "area"} onChange={e => set("coverageBasis", e.target.value)} style={{ ...iStyle, cursor: "pointer" }}>
+              <option value="area">Job Area (sqft) — tile, backer, thinset, grout...</option>
+              <option value="linear">Linear Feet — trim, edge strips, cove base...</option>
+            </select>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, cursor: "pointer", fontFamily: "sans-serif" }}>
+            <input type="checkbox" checked={!!f.applyWaste} onChange={e => set("applyWaste", e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12.5, color: "#c8b98a" }}>Add the job's waste % on top before rounding up to whole {pluralUnit(f.unitLabel || "bag", 2)}</span>
+          </label>
+        </>
+      )}
       <div style={{ marginBottom: 18 }}>
         <div style={fieldLabelStyle}>Note (optional)</div>
         <input placeholder="e.g. 50 lb bag" value={f.note || ""} onChange={e => set("note", e.target.value)} style={{ ...iStyle, fontSize: 12 }} />
@@ -678,7 +731,7 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
     const importedTiles = parsed.tiles || [];
     const importedServices = parsed.services || [];
 
-    const consumablesDiff = diffSimpleList(importedConsumables, s.consumables, ["priceType", "bagPrice", "bagCoverage", "unitCost", "category", "note"]);
+    const consumablesDiff = diffSimpleList(importedConsumables, s.consumables, ["priceType", "bagPrice", "bagCoverage", "unitLabel", "unitCost", "category", "note"]);
     const tilesDiff = diffSimpleList(importedTiles, s.tiles, ["labor", "icon", "notes"]);
     const servicesDiff = diffServices(importedServices, importedConsumables, s.services, s.consumables);
 
@@ -1655,7 +1708,7 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
 }
 
 // ─── Customer Presentation Mode ───────────────────────────────────────────────
-function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, area, tile,
+function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, area, linearFeet, wastePct, tile,
   tileWithWaste, tilePriceSqFt, enabledServices, serviceState, jobNotes, trueCost, markupMode,
   markupPercent, estimateNumber, onClose }) {
 
@@ -1679,12 +1732,9 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
       const cons = allCons.find(x => x.id === cId);
       if (!cons) return sum;
       const ovVal = st.overrides?.[cId];
-      const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
-        cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
-      const base = cons.priceType === "bag"
-        ? ((area || 0) / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
-        : cons.priceType === "sqft" ? (area || 0) * effPrice : effPrice;
-      return sum + base;
+      const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
     }, 0);
     return labor + mats;
   }
@@ -1693,16 +1743,17 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
   // Compute category totals for summary
   const tileMat = tileSupplied ? 0 : (tileWithWaste || 0) * (parseFloat(tilePriceSqFt) || 0);
-  const thinMat = thinsetC ? ((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)) * (parseFloat(thinsetC.bagPrice)||0) : 0;
-  const groutMat = groutC  ? ((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1))  * (parseFloat(groutC.bagPrice)||0)  : 0;
+  const thinMat = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
+  const groutMat = groutC  ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
   const svMatCost = svList.reduce((sum, sv) => {
     const st = serviceState[sv.id] || {};
     return sum + (sv.consumableIds||[]).reduce((s2, cId) => {
       const cons = allCons.find(x => x.id === cId);
       if (!cons) return s2;
       const ovVal = st.overrides?.[cId];
-      const effPrice = ovVal !== undefined ? parseFloat(ovVal)||0 : cons.priceType==="bag" ? parseFloat(cons.bagPrice)||0 : parseFloat(cons.unitCost)||0;
-      return s2 + (cons.priceType==="bag" ? ((area||0)/Math.max(1,parseFloat(cons.bagCoverage)||1))*effPrice : cons.priceType==="sqft" ? (area||0)*effPrice : effPrice);
+      const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+      return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
     }, 0);
   }, 0);
   const miscCost = trueCost - (tileMat + (tile ? (area||0)*(parseFloat(tile.labor)||0) : 0) + thinMat + groutMat + svList.reduce((s,sv)=>s+getServiceTotal(sv),0));
@@ -1834,12 +1885,12 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
             {/* Thinset */}
             {thinsetC && (() => {
-              const cost = ((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)) * (parseFloat(thinsetC.bagPrice)||0);
+              const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
               return cost > 0 ? (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
                   <div>
                     <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Thinset / Mortar</div>
-                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{((area||0) / Math.max(1, parseFloat(thinsetC.bagCoverage)||1)).toFixed(1)} bags</div>
+                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(thinsetC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(thinsetC), n)}`; })()}</div>
                   </div>
                   <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
                 </div>
@@ -1848,12 +1899,12 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
             {/* Grout */}
             {groutC && (() => {
-              const cost = ((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1)) * (parseFloat(groutC.bagPrice)||0);
+              const cost = consumableCost(groutC, area, linearFeet, wastePct);
               return cost > 0 ? (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: svList.length > 0 ? "1px solid #1a1710" : "none" }}>
                   <div>
                     <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Grout</div>
-                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{((area||0) / Math.max(1, parseFloat(groutC.bagCoverage)||1)).toFixed(1)} bags</div>
+                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(groutC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(groutC), n)}`; })()}</div>
                   </div>
                   <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
                 </div>
@@ -1880,8 +1931,9 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
                   {/* Service materials */}
                   {svConsumables.map(c => {
                     const ovVal = st.overrides?.[c.id];
-                    const effPrice = ovVal !== undefined ? parseFloat(ovVal)||0 : c.priceType==="bag" ? parseFloat(c.bagPrice)||0 : parseFloat(c.unitCost)||0;
-                    const lineCost = c.priceType==="bag" ? ((area||0)/Math.max(1,parseFloat(c.bagCoverage)||1))*effPrice : c.priceType==="sqft" ? (area||0)*effPrice : effPrice;
+                    const effectiveC = ovVal !== undefined ? { ...c, bagPrice: ovVal, unitCost: ovVal } : c;
+                    const qty = c.priceType === "flat" ? nv(st.overrides?.["qty__" + c.id], 1) : 1;
+                    const lineCost = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
                     return lineCost > 0 ? (
                       <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
                         <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.name}</span>
@@ -1940,7 +1992,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -2032,6 +2084,7 @@ export default function TileEstimator() {
   const [unsavedWarning, setUnsavedWarning] = useState(false);
 
   const [sqft, setSqft]                     = useState("");
+  const [linearFt, setLinearFt]             = useState("");
   const [selectedTileId, setSelectedTileId] = useState(null);
   const [tilePriceSqFt, setTilePriceSqFt]   = useState("");
   const [wastePercent, setWastePercent]     = useState("10");
@@ -2096,6 +2149,7 @@ export default function TileEstimator() {
       totalPrice,
       // Full input snapshot
       sqft: area,
+      linearFt: linearFeet,
       tileId: selectedTileId,
       tileName: tile?.name || "",
       tilePriceSqFt: tilePriceSqFt || "",
@@ -2174,6 +2228,7 @@ export default function TileEstimator() {
       projectDesc: projectDesc || "",
       totalPrice: customerPrice,
       sqft: area,
+      linearFt: linearFeet,
       tileId: selectedTileId,
       tileName: tile?.name || "",
       tilePriceSqFt: tilePriceSqFt || "",
@@ -2295,6 +2350,7 @@ export default function TileEstimator() {
 
   const tile         = settings.tiles.find(t => t.id === selectedTileId);
   const area         = nv(sqft);
+  const linearFeet   = nv(linearFt);
   const laborRate    = nv(tile?.labor);
   const wastePct     = (parseFloat(wastePercent) || 0) / 100;
   const tileWithWaste    = area * (1 + wastePct);
@@ -2305,8 +2361,8 @@ export default function TileEstimator() {
   // Thinset & grout come from consumables list
   const thinsetC  = settings.consumables.find(c => c.id === "thinset");
   const groutC    = settings.consumables.find(c => c.id === "grout");
-  const thinsetCost = thinsetC ? consumableCost(thinsetC, area) : 0;
-  const groutCost   = groutC   ? consumableCost(groutC,   area) : 0;
+  const thinsetCost = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
+  const groutCost   = groutC   ? consumableCost(groutC,   area, linearFeet, wastePct) : 0;
 
   // Enabled services
   const enabledServices = settings.services.filter(sv => serviceState[sv.id]?.enabled);
@@ -2318,7 +2374,8 @@ export default function TileEstimator() {
       if (!c) return sum;
       const override = serviceState[sv.id]?.overrides?.[cId];
       const effectiveC = override !== undefined ? { ...c, bagPrice: override, unitCost: override } : c;
-      return sum + consumableCost(effectiveC, area);
+      const qty = c.priceType === "flat" ? nv(serviceState[sv.id]?.overrides?.["qty__" + cId], 1) : 1;
+      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
     }, 0);
     return laborCostSv + matCost;
   }
@@ -2361,7 +2418,7 @@ export default function TileEstimator() {
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
   function resetEstimate() {
-    setSqft(""); setSelectedTileId(null); setTilePriceSqFt(""); setWastePercent("10");
+    setSqft(""); setLinearFt(""); setSelectedTileId(null); setTilePriceSqFt(""); setWastePercent("10");
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
     setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
@@ -2370,6 +2427,7 @@ export default function TileEstimator() {
 
   function loadEstimate(record) {
     setSqft(String(record.sqft || ""));
+    setLinearFt(String(record.linearFt || ""));
     setSelectedTileId(record.tileId || null);
     setTilePriceSqFt(String(record.tilePriceSqFt || ""));
     setWastePercent(String(record.wastePercent || "10"));
@@ -2399,6 +2457,8 @@ export default function TileEstimator() {
           projectDesc={jobNotes}
           customerPrice={customerPrice}
           area={area}
+          linearFeet={linearFeet}
+          wastePct={wastePct}
           tile={tile}
           tileWithWaste={tileWithWaste}
           tilePriceSqFt={tilePriceSqFt}
@@ -2568,6 +2628,11 @@ export default function TileEstimator() {
           <Section label="01" title="Square Footage">
             <input type="number" placeholder="e.g. 350" value={sqft} onChange={e => setSqft(e.target.value)} style={inputStyle} />
             <div style={{ fontSize: 12, color: "#6b5f4a", marginTop: 8 }}>Enter the total area in square feet</div>
+            <div style={{ marginTop: 14 }}>
+              <div style={{ ...fieldLabelStyle, marginBottom: 5 }}>Linear Feet (optional)</div>
+              <input type="number" placeholder="e.g. 60" value={linearFt} onChange={e => setLinearFt(e.target.value)} style={inputStyle} />
+              <div style={{ fontSize: 12, color: "#6b5f4a", marginTop: 8 }}>For trim, edge strips, or cove base priced by the linear foot</div>
+            </div>
           </Section>
 
           {/* 02 */}
@@ -2658,21 +2723,35 @@ export default function TileEstimator() {
                             const defaultCost = c.priceType === "bag" ? c.bagPrice : c.unitCost;
                             const ovVal = getOverride(sv.id, c.id, defaultCost);
                             const effectiveC = { ...c, bagPrice: ovVal, unitCost: ovVal };
-                            const lineTotal = consumableCost(effectiveC, area);
+                            const qty = c.priceType === "flat" ? nv(getOverride(sv.id, "qty__" + c.id, 1), 1) : 1;
+                            const lineTotal = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
+                            const basisNote = c.priceType === "bag" && c.coverageBasis === "linear"
+                              ? `${materialUnits(effectiveC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(c), materialUnits(effectiveC, area, linearFeet, wastePct))} · ${linearFeet} ln ft`
+                              : null;
                             return (
-                              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                                <div>
-                                  <div style={{ fontSize: 13, color: "#c8b98a", fontFamily: "sans-serif" }}>{c.name}</div>
-                                  {area > 0 && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{fmt(lineTotal)} total</div>}
+                              <div key={c.id} style={{ marginBottom: 8 }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px", gap: 8, alignItems: "center" }}>
+                                  <div>
+                                    <div style={{ fontSize: 13, color: "#c8b98a", fontFamily: "sans-serif" }}>{c.name}</div>
+                                    {area > 0 && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{fmt(lineTotal)} total{basisNote ? ` · ${basisNote}` : ""}</div>}
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ color: "#5a4f38", fontSize: 12 }}>$</span>
+                                    <input type="number" value={ovVal} onChange={e => setOverride(sv.id, c.id, e.target.value)}
+                                      style={{ ...iStyle, flex: 1, fontSize: 13 }} />
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 8px", textAlign: "center" }}>
+                                    {c.priceType === "bag" ? `$/${unitLabelOf(c)}` : c.priceType === "sqft" ? "/sqft" : "flat"}
+                                  </div>
                                 </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                  <span style={{ color: "#5a4f38", fontSize: 12 }}>$</span>
-                                  <input type="number" value={ovVal} onChange={e => setOverride(sv.id, c.id, e.target.value)}
-                                    style={{ ...iStyle, flex: 1, fontSize: 13 }} />
-                                </div>
-                                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 8px", textAlign: "center" }}>
-                                  {c.priceType === "bag" ? "$/bag" : c.priceType === "sqft" ? "/sqft" : "flat"}
-                                </div>
+                                {c.priceType === "flat" && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                                    <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>Quantity</span>
+                                    <input type="number" min="0" value={qty}
+                                      onChange={e => setOverride(sv.id, "qty__" + c.id, e.target.value)}
+                                      style={{ ...iStyle, width: 60, fontSize: 12, padding: "4px 8px" }} />
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -2768,8 +2847,8 @@ export default function TileEstimator() {
                     : <LineItem label={`Tile — ${tile.name} (not included)`} value={0} dim />
                   }
                   <LineItem label={`Labor — ${tile.name} (${area} sqft × $${laborRate}/sqft)`} value={laborCost} />
-                  {thinsetC && <LineItem label={`Thinset (${(area / nv(thinsetC.bagCoverage, 1)).toFixed(1)} bags × $${nv(thinsetC.bagPrice)})`} value={thinsetCost} />}
-                  {groutC   && <LineItem label={`Grout (${(area / nv(groutC.bagCoverage, 1)).toFixed(1)} bags × $${nv(groutC.bagPrice)})`}     value={groutCost} />}
+                  {thinsetC && <LineItem label={`Thinset (${materialUnits(thinsetC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(thinsetC), materialUnits(thinsetC, area, linearFeet, wastePct))} × $${nv(thinsetC.bagPrice)})`} value={thinsetCost} />}
+                  {groutC   && <LineItem label={`Grout (${materialUnits(groutC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(groutC), materialUnits(groutC, area, linearFeet, wastePct))} × $${nv(groutC.bagPrice)})`}     value={groutCost} />}
                   {enabledServices.map(sv => {
                     const assignedC = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
                     const laborOv = parseFloat(getOverride(sv.id, "__labor__", sv.laborPerSqFt)) || 0;
@@ -2822,6 +2901,8 @@ export default function TileEstimator() {
               <SendEstimateButtons
                 settings={settings}
                 area={area}
+                linearFeet={linearFeet}
+                wastePct={wastePct}
                 tile={tile}
                 tileWithWaste={tileWithWaste}
                 tilePriceSqFt={tilePriceSqFt}
@@ -2913,7 +2994,7 @@ export default function TileEstimator() {
 
 
 // ─── Send Estimate ───────────────────────────────────────────
-function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqFt,
+function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileWithWaste, tilePriceSqFt,
   enabledServices, serviceState, trueCost, customerPrice, profit, margin,
   markupMode, markupPercent, jobNotes, customerName, customerEmail, customerPhone,
   projectDesc, onEstimateSent }) {
@@ -2934,16 +3015,14 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
 
   function getServiceTotal(sv) {
     const st = serviceState[sv.id] || {};
-    const labor = area * (parseFloat(st.overrides?.labor ?? sv.laborPerSqFt) || 0);
+    const labor = area * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
     const mats  = (sv.consumableIds || []).reduce((sum, cId) => {
       const cons = (settings.consumables || []).find(x => x.id === cId);
       if (!cons) return sum;
       const override = st.overrides?.[cId];
-      const base =
-        cons.priceType === "bag"  ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * (parseFloat(cons.bagPrice) || 0) :
-        cons.priceType === "sqft" ? area * (parseFloat(cons.unitCost) || 0) :
-        parseFloat(cons.unitCost) || 0;
-      return sum + (override !== undefined ? parseFloat(override) || 0 : base);
+      const effectiveC = override !== undefined ? { ...cons, bagPrice: override, unitCost: override } : cons;
+      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
     }, 0);
     return labor + mats;
   }
@@ -3012,13 +3091,11 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
       L.push("  " + tile.name + " installation   " + mp(area * (parseFloat(tile.labor) || 0)));
     }
     if (thinsetC) {
-      const bags = area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1);
-      const cost = bags * (parseFloat(thinsetC.bagPrice) || 0);
+      const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
       if (cost > 0) L.push("  Thinset & mortar   " + mp(cost));
     }
     if (groutC) {
-      const bags = area / Math.max(1, parseFloat(groutC.bagCoverage) || 1);
-      const cost = bags * (parseFloat(groutC.bagPrice) || 0);
+      const cost = consumableCost(groutC, area, linearFeet, wastePct);
       if (cost > 0) L.push("  Grout   " + mp(cost));
     }
     svList.forEach(sv => {
@@ -3030,19 +3107,17 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
         const cons = allCons.find(x => x.id === cId);
         if (!cons) return;
         const ovVal = st.overrides?.[cId];
-        const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
-          cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
-        const lineCost = cons.priceType === "bag"
-          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
-          : cons.priceType === "sqft" ? area * effPrice : effPrice;
+        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+        const lineCost = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
         if (lineCost > 0) L.push("    • " + cons.name);
       });
     });
     const knownCost =
       (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
       (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
-      (thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0) +
-      (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
+      (thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0) +
+      (groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
     if (misc > 0.01) L.push("  Supplies & sundries   " + mp(misc));
@@ -3099,19 +3174,19 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     if (!tileSupplied) L.push("Tile material        " + mp(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
     if (tile)          L.push("Installation         " + mp(area * (parseFloat(tile.labor) || 0)));
     if (thinsetC) {
-      const cost = (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0);
+      const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
       if (cost > 0) L.push("Thinset & mortar     " + mp(cost));
     }
     if (groutC) {
-      const cost = (area / Math.max(1, parseFloat(groutC.bagCoverage) || 1)) * (parseFloat(groutC.bagPrice) || 0);
+      const cost = consumableCost(groutC, area, linearFeet, wastePct);
       if (cost > 0) L.push("Grout                " + mp(cost));
     }
     svList.forEach(sv => L.push(sv.name + "   " + mp(getServiceTotal(sv))));
     const knownCost =
       (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
       (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
-      (thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0) +
-      (groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0) +
+      (thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0) +
+      (groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0) +
       svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const misc = trueCost - knownCost;
     if (misc > 0.01) L.push("Supplies             " + mp(misc));
@@ -3140,20 +3215,17 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     const firstName = customerName ? customerName.split(" ")[0] : "";
 
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-    const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
-    const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
+    const thinMat  = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
+    const groutMat = groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
     const svMatCost = svList.reduce((sum, sv) => {
       const st = serviceState[sv.id] || {};
       return sum + (sv.consumableIds || []).reduce((s2, cId) => {
         const cons = allCons.find(x => x.id === cId);
         if (!cons) return s2;
         const ovVal = st.overrides?.[cId];
-        const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
-          cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
-        const lineCost = cons.priceType === "bag"
-          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
-          : cons.priceType === "sqft" ? area * effPrice : effPrice;
-        return s2 + lineCost;
+        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+        return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
       }, 0);
     }, 0);
     const miscCost = trueCost - (
@@ -3240,19 +3312,17 @@ function SendEstimateButtons({ settings, area, tile, tileWithWaste, tilePriceSqF
     const groutC   = allCons.find(x => x.id === "grout");
     const firstName = customerName ? customerName.split(" ")[0] : "";
     const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-    const thinMat  = thinsetC ? (area / Math.max(1, parseFloat(thinsetC.bagCoverage) || 1)) * (parseFloat(thinsetC.bagPrice) || 0) : 0;
-    const groutMat = groutC   ? (area / Math.max(1, parseFloat(groutC.bagCoverage)   || 1)) * (parseFloat(groutC.bagPrice)   || 0) : 0;
+    const thinMat  = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
+    const groutMat = groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
     const svMatCost = svList.reduce((sum, sv) => {
       const st = serviceState[sv.id] || {};
       return sum + (sv.consumableIds || []).reduce((s2, cId) => {
         const cons = allCons.find(x => x.id === cId);
         if (!cons) return s2;
         const ovVal = st.overrides?.[cId];
-        const effPrice = ovVal !== undefined ? parseFloat(ovVal) || 0 :
-          cons.priceType === "bag" ? parseFloat(cons.bagPrice) || 0 : parseFloat(cons.unitCost) || 0;
-        return s2 + (cons.priceType === "bag"
-          ? (area / Math.max(1, parseFloat(cons.bagCoverage) || 1)) * effPrice
-          : cons.priceType === "sqft" ? area * effPrice : effPrice);
+        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+        return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
       }, 0);
     }, 0);
     const miscCost = trueCost - (
@@ -3598,6 +3668,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.7.0 — Materials sold by coverage (bags, boxes, sheets, rolls, etc.) now round up to whole units so costs match what you'd actually buy; added an optional per-material waste % and a new Linear Feet job input for trim/edge/cove-base materials priced by the linear foot instead of area; flat-priced materials (corners, end caps) now support a per-job quantity",
           "v1.6.0 — Materials, Tile Types, and Services redesigned as compact grouped lists with an Add/Edit popup form instead of always-expanded rows; new Share Pricing Setup export/import lets you send just your materials/tiles/services to another device with a conflict-review screen; added a Check Price button that opens Home Depot, Lowe's, or Floor & Decor search for a material or tile",
           "v1.5.0 — Redesigned navigation: bottom tab bar, Settings is now a drill-down menu, Help moved to a header button; fixed version display drift, mount-time effects now use useEffect, import now confirms before overwriting data, added a crash-recovery screen, draft counter included in backups, history cap now trims device storage too",
           "v1.4.0 — (see CHANGELOG.md on GitHub for details of this release)",
