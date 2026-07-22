@@ -222,8 +222,8 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 function fmt(n) { return (isNaN(n) || n == null) ? "$—" : n.toLocaleString("en-US", { style: "currency", currency: "USD" }); }
 function nv(v, fb = 0) { return parseFloat(v) || fb; }
 
-function newTile()        { return { id: uid(), name: "", icon: "⬜", labor: "", notes: "" }; }
-function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitLabel: "bag", coverageBasis: "area", applyWaste: false, unitCost: "", note: "" }; }
+function newTile()        { return { id: uid(), name: "", icon: "⬜", labor: "", notes: "", serviceIds: [] }; }
+function newConsumable()  { return { id: uid(), name: "", category: "Other", priceType: "sqft", bagPrice: "", bagCoverage: "", unitLabel: "bag", coverageBasis: "area", applyWaste: false, useCustomWaste: false, wasteOverride: "", unitCost: "", note: "" }; }
 function newService()     { return { id: uid(), name: "", laborPerSqFt: "", consumableIds: [] }; }
 
 // Units of a coverage-type material (bag/box/roll/etc) needed for a given sqft area.
@@ -246,7 +246,11 @@ function pluralUnit(label, count) {
 // Picks area or linear feet as the quantity basis for a coverage material, then applies waste % if enabled
 function materialBasis(c, area, linearFeet, wastePct) {
   let basis = (c && c.coverageBasis === "linear") ? (linearFeet || 0) : (area || 0);
-  if (c && c.applyWaste) basis = basis * (1 + (wastePct || 0));
+  if (c && c.applyWaste) {
+    const hasCustom = c.useCustomWaste && c.wasteOverride !== "" && c.wasteOverride != null;
+    const effectiveWaste = hasCustom ? (parseFloat(c.wasteOverride) || 0) / 100 : (wastePct || 0);
+    basis = basis * (1 + effectiveWaste);
+  }
   return basis;
 }
 
@@ -513,6 +517,43 @@ function MaterialPicker({ consumables, assignedIds, onToggle }) {
   );
 }
 
+// Simple checklist for assigning services to a tile type — no search/grouping needed since service lists are typically short
+function ServicePicker({ services, assignedIds, onToggle }) {
+  if (!services || services.length === 0) {
+    return (
+      <div style={{ padding: "10px 12px", fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic", border: "1px solid #2e2518", borderRadius: 6, background: "#0f0d0a" }}>
+        Add services in the Services tab first
+      </div>
+    );
+  }
+  return (
+    <div style={{ border: "1px solid #2e2518", borderRadius: 6, background: "#0f0d0a", maxHeight: 240, overflowY: "auto", padding: "6px 0" }}>
+      {services.map(sv => {
+        const assigned = assignedIds.includes(sv.id);
+        return (
+          <div key={sv.id} onClick={() => onToggle(sv.id)} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "9px 14px", cursor: "pointer",
+            background: assigned ? "rgba(193,151,72,0.07)" : "transparent",
+          }}>
+            <div style={{
+              width: 16, height: 16, flexShrink: 0, borderRadius: 3,
+              border: assigned ? "2px solid #c19748" : "2px solid #3a3020",
+              background: assigned ? "#c19748" : "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {assigned && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="#0f0f0f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+            </div>
+            <span style={{ fontSize: 13, color: assigned ? "#d4c49a" : "#5a4f38", fontFamily: "sans-serif", flex: 1 }}>
+              {sv.name || "Unnamed"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Shared list-row / modal building blocks ──────────────────────────────────
 const rowStyle = {
   width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
@@ -627,10 +668,24 @@ function MaterialFormModal({ material, onSave, onDelete, onClose }) {
               <option value="linear">Linear Feet — trim, edge strips, cove base...</option>
             </select>
           </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, cursor: "pointer", fontFamily: "sans-serif" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: f.applyWaste ? 10 : 18, cursor: "pointer", fontFamily: "sans-serif" }}>
             <input type="checkbox" checked={!!f.applyWaste} onChange={e => set("applyWaste", e.target.checked)} style={{ width: 16, height: 16 }} />
-            <span style={{ fontSize: 12.5, color: "#c8b98a" }}>Add the job's waste % on top before rounding up to whole {pluralUnit(f.unitLabel || "bag", 2)}</span>
+            <span style={{ fontSize: 12.5, color: "#c8b98a" }}>Add waste % on top before rounding up to whole {pluralUnit(f.unitLabel || "bag", 2)}</span>
           </label>
+          {f.applyWaste && (
+            <div style={{ marginBottom: 18, paddingLeft: 24 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: f.useCustomWaste ? 10 : 0, cursor: "pointer", fontFamily: "sans-serif" }}>
+                <input type="checkbox" checked={!!f.useCustomWaste} onChange={e => set("useCustomWaste", e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12.5, color: "#8a7d65" }}>Use a custom waste % for this material (instead of the job's waste %)</span>
+              </label>
+              {f.useCustomWaste && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: 140 }}>
+                  <input type="number" placeholder="e.g. 15" value={f.wasteOverride} onChange={e => set("wasteOverride", e.target.value)} style={iStyle} min="0" />
+                  <span style={{ color: "#5a4f38", fontSize: 13 }}>%</span>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
       <div style={{ marginBottom: 18 }}>
@@ -642,10 +697,16 @@ function MaterialFormModal({ material, onSave, onDelete, onClose }) {
   );
 }
 
-function TileFormModal({ tile, onSave, onDelete, onClose }) {
-  const [f, setF] = useState(() => tile ? { ...tile } : newTile());
+function TileFormModal({ tile, services, onSave, onDelete, onClose }) {
+  const [f, setF] = useState(() => tile ? { serviceIds: [], ...tile } : newTile());
   const isEdit = !!tile;
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const toggleService = svId => {
+    setF(p => {
+      const has = p.serviceIds.includes(svId);
+      return { ...p, serviceIds: has ? p.serviceIds.filter(x => x !== svId) : [...p.serviceIds, svId] };
+    });
+  };
 
   return (
     <ModalShell title={isEdit ? "Edit Tile Type" : "Add Tile Type"} onClose={onClose} onDelete={isEdit ? () => onDelete(f.id) : null}>
@@ -669,9 +730,16 @@ function TileFormModal({ tile, onSave, onDelete, onClose }) {
         </div>
         <input type="number" placeholder="0.00" value={f.labor} onChange={e => set("labor", e.target.value)} style={iStyle} />
       </div>
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 14 }}>
         <div style={fieldLabelStyle}>Note (optional)</div>
         <input placeholder="Shown on estimator" value={f.notes || ""} onChange={e => set("notes", e.target.value)} style={{ ...iStyle, fontSize: 12 }} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={fieldLabelStyle}>Required Services</div>
+        <div style={{ fontSize: 11.5, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 8 }}>
+          Auto-enabled on the estimator whenever this tile type is selected
+        </div>
+        <ServicePicker services={services || []} assignedIds={f.serviceIds || []} onToggle={toggleService} />
       </div>
       <button onClick={() => onSave(f)} style={primaryBtnStyle}>{isEdit ? "Save Changes" : "Add Tile Type"}</button>
     </ModalShell>
@@ -1124,6 +1192,7 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
       {tileModal && (
         <TileFormModal
           tile={tileModal.mode === "edit" ? s.tiles.find(t => t.id === tileModal.id) : null}
+          services={s.services}
           onSave={f => { saveT(f); setTileModal(null); }}
           onDelete={id => { deleteT(id); setTileModal(null); }}
           onClose={() => setTileModal(null)}
@@ -1538,6 +1607,234 @@ function CustomersPage({ customers, estimates, onSave, onDelete }) {
 }
 
 // ─── History Page ─────────────────────────────────────────────────────────────
+// ─── Date helpers for Accounting tab ──────────────────────────────────────
+function startOfDay(d)   { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d, n)   { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function startOfWeek(d)  { const x = startOfDay(d); x.setDate(x.getDate() - x.getDay()); return x; }
+function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+function startOfQuarter(d){ const q = Math.floor(d.getMonth() / 3); return new Date(d.getFullYear(), q * 3, 1); }
+function startOfYear(d)  { return new Date(d.getFullYear(), 0, 1); }
+
+function getPeriodRange(type, anchor) {
+  switch (type) {
+    case "day": {
+      const start = startOfDay(anchor), end = addDays(start, 1);
+      return { start, end, label: start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) };
+    }
+    case "week": {
+      const start = startOfWeek(anchor), end = addDays(start, 7);
+      const label = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${addDays(start, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      return { start, end, label };
+    }
+    case "month": {
+      const start = startOfMonth(anchor), end = addMonths(start, 1);
+      return { start, end, label: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }) };
+    }
+    case "quarter": {
+      const start = startOfQuarter(anchor), end = addMonths(start, 3);
+      return { start, end, label: `Q${Math.floor(start.getMonth() / 3) + 1} ${start.getFullYear()}` };
+    }
+    case "year": {
+      const start = startOfYear(anchor), end = new Date(start.getFullYear() + 1, 0, 1);
+      return { start, end, label: `${start.getFullYear()}` };
+    }
+    default: return getPeriodRange("month", anchor);
+  }
+}
+function shiftAnchor(type, anchor, dir) {
+  switch (type) {
+    case "day":     return addDays(anchor, dir);
+    case "week":    return addDays(anchor, dir * 7);
+    case "month":   return addMonths(anchor, dir);
+    case "quarter": return addMonths(anchor, dir * 3);
+    case "year":    return new Date(anchor.getFullYear() + dir, anchor.getMonth(), 1);
+    default: return anchor;
+  }
+}
+function getSubBuckets(type, start, end) {
+  if (type === "day") return null;
+  if (type === "week") {
+    return Array.from({ length: 7 }, (_, i) => {
+      const s = addDays(start, i);
+      return { label: s.toLocaleDateString("en-US", { weekday: "short" })[0], start: s, end: addDays(s, 1) };
+    });
+  }
+  const buckets = [];
+  let cur = start, idx = 1;
+  while (cur < end) {
+    let e, label;
+    if (type === "month") { e = new Date(Math.min(addDays(cur, 7).getTime(), end.getTime())); label = `W${idx}`; idx++; }
+    else { e = addMonths(cur, 1); label = cur.toLocaleDateString("en-US", { month: "narrow" }); }
+    buckets.push({ label, start: cur, end: e });
+    cur = e;
+  }
+  return buckets;
+}
+
+function AccountingPage({ estimateHistory }) {
+  const [periodType, setPeriodType] = useState("week");
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [search, setSearch] = useState("");
+
+  const fmt = v => "$" + Math.round(Number(v || 0)).toLocaleString("en-US");
+  const range = getPeriodRange(periodType, anchor);
+  const prevAnchor = shiftAnchor(periodType, anchor, -1);
+  const prevRange = getPeriodRange(periodType, prevAnchor);
+
+  const inRange = (rec, r) => {
+    const d = new Date(rec.dateISO || rec.date);
+    return d >= r.start && d < r.end;
+  };
+
+  const all = estimateHistory || [];
+  const inPeriod = all.filter(r => inRange(r, range));
+  const withData = inPeriod.filter(r => r.trueCost != null);
+  const missingCount = inPeriod.length - withData.length;
+
+  const q = search.trim().toLowerCase();
+  const visible = withData.filter(r => !q ||
+    (r.customerName || "").toLowerCase().includes(q) ||
+    (r.projectDesc || "").toLowerCase().includes(q)
+  ).sort((a, b) => new Date(b.dateISO || b.date) - new Date(a.dateISO || a.date));
+
+  const totalCharged = withData.reduce((s, r) => s + (r.totalPrice || 0), 0);
+  const totalCost    = withData.reduce((s, r) => s + (r.trueCost || 0), 0);
+  const totalProfit  = totalCharged - totalCost;
+  const avgMargin    = totalCharged > 0 ? (totalProfit / totalCharged) * 100 : 0;
+
+  const prevWithData = all.filter(r => inRange(r, prevRange) && r.trueCost != null);
+  const prevProfit = prevWithData.reduce((s, r) => s + ((r.totalPrice || 0) - (r.trueCost || 0)), 0);
+  const hasPrevData = prevWithData.length > 0;
+  const deltaPct = hasPrevData && prevProfit !== 0 ? ((totalProfit - prevProfit) / Math.abs(prevProfit)) * 100 : null;
+
+  const periodNoun = { day: "day", week: "week", month: "month", quarter: "quarter", year: "year" }[periodType];
+  const buckets = getSubBuckets(periodType, range.start, range.end);
+  const bucketProfits = buckets ? buckets.map(b => withData.reduce((s, r) => inRange(r, b) ? s + ((r.totalPrice || 0) - (r.trueCost || 0)) : s, 0)) : [];
+  const maxAbs = bucketProfits.length ? Math.max(1, ...bucketProfits.map(v => Math.abs(v))) : 1;
+
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px 90px" }}>
+      <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 22, color: "#f0ede6", marginBottom: 4 }}>Accounting</div>
+      <div style={{ fontSize: 12, color: "#6b5f4a", fontFamily: "sans-serif", marginBottom: 18 }}>Profit &amp; expense summary across sent estimates</div>
+
+      {/* Period type tabs */}
+      <div style={{ display: "flex", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
+        {["day", "week", "month", "quarter", "year"].map(t => (
+          <div key={t} onClick={() => setPeriodType(t)} style={{
+            flex: 1, textAlign: "center", padding: "9px 4px", fontSize: 11, fontWeight: 600,
+            letterSpacing: 0.5, textTransform: "uppercase", cursor: "pointer", fontFamily: "sans-serif",
+            color: periodType === t ? "#c19748" : "#5a4f38",
+            background: periodType === t ? "#1a1710" : "transparent",
+            borderBottom: periodType === t ? "2px solid #c19748" : "2px solid transparent",
+          }}>{t}</div>
+        ))}
+      </div>
+
+      {/* Period navigator */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "10px 14px", marginBottom: 18 }}>
+        <span onClick={() => setAnchor(shiftAnchor(periodType, anchor, -1))} style={{ color: "#6b5f4a", fontSize: 15, cursor: "pointer", padding: "4px 8px" }}>‹</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#d4c49a", fontFamily: "sans-serif" }}>{range.label}</span>
+        <span onClick={() => setAnchor(shiftAnchor(periodType, anchor, 1))} style={{ color: "#6b5f4a", fontSize: 15, cursor: "pointer", padding: "4px 8px" }}>›</span>
+      </div>
+
+      {/* Profit hero */}
+      <div style={{
+        background: "linear-gradient(135deg, rgba(109,196,122,0.10), rgba(19,17,13,0.4))",
+        border: `1px solid ${totalProfit >= 0 ? "#2e4a2e" : "#4a2e2e"}`, borderRadius: 10,
+        padding: "18px 16px", textAlign: "center", marginBottom: 12,
+      }}>
+        <div style={{ fontSize: 10, color: "#6b8a6b", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", marginBottom: 6 }}>
+          Net Profit This {periodNoun.charAt(0).toUpperCase() + periodNoun.slice(1)}
+        </div>
+        <div style={{ fontSize: 34, fontWeight: 700, fontFamily: "sans-serif", color: totalProfit >= 0 ? "#6dc47a" : "#c15b48" }}>{fmt(totalProfit)}</div>
+        {deltaPct != null && (
+          <div style={{ fontSize: 11, color: deltaPct >= 0 ? "#5a7a5a" : "#8a5a5a", marginTop: 4, fontFamily: "sans-serif" }}>
+            {deltaPct >= 0 ? "↑" : "↓"} {Math.abs(deltaPct).toFixed(0)}% vs. last {periodNoun}
+          </div>
+        )}
+      </div>
+
+      {/* Stat grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 18 }}>
+        {[
+          ["Total Charged", fmt(totalCharged), "#e8c870"],
+          ["Total Expense", fmt(totalCost), "#c8b98a"],
+          ["Avg Margin", avgMargin.toFixed(0) + "%", avgMargin >= 0 ? "#6dc47a" : "#c15b48"],
+          ["Jobs Completed", String(withData.length), "#c8b98a"],
+        ].map(([label, val, color]) => (
+          <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 9, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "sans-serif", marginBottom: 5 }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "sans-serif", color }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {missingCount > 0 && (
+        <div style={{ fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", marginBottom: 14, fontStyle: "italic" }}>
+          {missingCount} estimate{missingCount !== 1 ? "s" : ""} in this period {missingCount !== 1 ? "were" : "was"} saved before profit tracking and {missingCount !== 1 ? "are" : "is"} excluded from these totals.
+        </div>
+      )}
+
+      {/* Chart */}
+      {buckets && (
+        <>
+          <div style={{ fontSize: 11, color: "#8a7d5e", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", fontWeight: 600, marginBottom: 10 }}>Profit by {periodType === "week" ? "Day" : periodType === "month" ? "Week" : "Month"}</div>
+          <div style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "16px 12px 10px", marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, marginBottom: 8 }}>
+              {bucketProfits.map((v, i) => (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
+                  <div style={{
+                    width: "100%", borderRadius: "3px 3px 0 0",
+                    background: v === 0 ? "#2e2518" : v > 0 ? "#6dc47a" : "#c15b48",
+                    height: `${Math.max(4, (Math.abs(v) / maxAbs) * 100)}%`,
+                  }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {buckets.map((b, i) => (
+                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 8, color: "#5a4f38", fontFamily: "sans-serif" }}>{b.label}</div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Search */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
+        <span style={{ color: "#4a4030", fontSize: 13 }}>🔍</span>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs in this period…"
+          style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontSize: 13, flex: 1, fontFamily: "sans-serif" }} />
+      </div>
+
+      {/* Job list */}
+      <div style={{ fontSize: 11, color: "#8a7d5e", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", fontWeight: 600, marginBottom: 10 }}>
+        Jobs This {periodNoun.charAt(0).toUpperCase() + periodNoun.slice(1)}
+      </div>
+      {visible.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "30px 0", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 13 }}>
+          No profit-tracked estimates {q ? "match your search" : "in this period"}.
+        </div>
+      ) : visible.map(r => {
+        const p = (r.totalPrice || 0) - (r.trueCost || 0);
+        return (
+          <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: "#d4c49a", fontWeight: 600, fontFamily: "sans-serif", marginBottom: 3 }}>{r.customerName || "Unnamed customer"}</div>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{r.date}{r.projectDesc ? ` · ${r.projectDesc}` : ""}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, color: "#e8c870", fontWeight: 600, fontFamily: "sans-serif" }}>{fmt(r.totalPrice)}</div>
+              <div style={{ fontSize: 11, color: p >= 0 ? "#6dc47a" : "#c15b48", marginTop: 2, fontFamily: "sans-serif" }}>{p >= 0 ? "+" : ""}{fmt(p)} profit</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, onUpdate, onDelete, onLoad, onDeleteDraft, onLoadDraft, onSendDraft }) {
   const [view, setView]         = useState("sent");
   const [search, setSearch]     = useState("");
@@ -1610,6 +1907,30 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
           </button>
         )}
       </div>
+
+      {/* Totals across currently filtered sent estimates that have profit data */}
+      {view === "sent" && filtered.some(e => e.trueCost != null) && (() => {
+        const withData = filtered.filter(e => e.trueCost != null);
+        const totalCharged = withData.reduce((s, e) => s + (e.totalPrice || 0), 0);
+        const totalCost    = withData.reduce((s, e) => s + (e.trueCost || 0), 0);
+        const totalProfit  = totalCharged - totalCost;
+        const avgMargin    = totalCharged > 0 ? (totalProfit / totalCharged) * 100 : 0;
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+            {[
+              ["Total Charged", fmt(totalCharged), "#e8c870"],
+              ["Total Cost", fmt(totalCost), "#c8b98a"],
+              ["Total Profit", fmt(totalProfit), totalProfit >= 0 ? "#6dc47a" : "#c15b48"],
+              ["Avg Margin", avgMargin.toFixed(0) + "%", avgMargin >= 0 ? "#6dc47a" : "#c15b48"],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 14, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
@@ -1771,6 +2092,23 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
                   }}>✕</button>
                 </div>
+
+                {/* Job economics — charged, cost, profit, margin */}
+                {e.trueCost != null && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "0 16px 12px", background: "#0f0d0a" }}>
+                    {[
+                      ["Charged", fmt(e.totalPrice), "#e8c870"],
+                      ["Cost", fmt(e.trueCost), "#c8b98a"],
+                      ["Profit", fmt(e.profit), e.profit >= 0 ? "#6dc47a" : "#c15b48"],
+                      ["Margin", (e.margin != null ? e.margin.toFixed(0) : "0") + "%", e.margin >= 0 ? "#6dc47a" : "#c15b48"],
+                    ].map(([label, val, color]) => (
+                      <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
+                        <div style={{ fontSize: 13, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Job status picker */}
                 <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap" }}>
@@ -2318,7 +2656,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -2473,6 +2811,9 @@ export default function TileEstimator() {
       customerPhone: customerPhone || "",
       projectDesc: projectDesc || "",
       totalPrice,
+      trueCost,
+      profit,
+      margin,
       // Full input snapshot
       sqft: area,
       linearFt: linearFeet,
@@ -2720,6 +3061,17 @@ export default function TileEstimator() {
   function toggleService(id) {
     setServiceState(p => ({ ...p, [id]: { ...p[id], enabled: !p[id]?.enabled } }));
   }
+  // Selecting a tile type auto-enables its required services (does not disable anything already on)
+  function selectTile(t) {
+    setSelectedTileId(t.id);
+    const required = t.serviceIds || [];
+    if (required.length === 0) return;
+    setServiceState(p => {
+      const next = { ...p };
+      required.forEach(svId => { next[svId] = { ...next[svId], enabled: true }; });
+      return next;
+    });
+  }
   function setOverride(svId, cId, val) {
     setServiceState(p => ({
       ...p, [svId]: { ...p[svId], overrides: { ...(p[svId]?.overrides || {}), [cId]: val } }
@@ -2881,6 +3233,9 @@ export default function TileEstimator() {
           onSendDraft={sendDraft}
         />
       )
+      : page === "accounting" ? (
+        <AccountingPage estimateHistory={estimateHistory} />
+      )
       : page === "help"     ? <HelpPage />
       : (
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 20px 60px" }}>
@@ -2966,7 +3321,7 @@ export default function TileEstimator() {
             {settings.tiles.length === 0 ? <EmptyState msg="No tile types yet — add some in ⚙ Settings → Tile Types" /> : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px,1fr))", gap: 10 }}>
                 {settings.tiles.map(t => (
-                  <button key={t.id} onClick={() => setSelectedTileId(t.id)} style={{
+                  <button key={t.id} onClick={() => selectTile(t)} style={{
                     background: selectedTileId === t.id ? "#c19748" : "#1c1812",
                     border: `1px solid ${selectedTileId === t.id ? "#c19748" : "#2e2518"}`,
                     borderRadius: 6, padding: "14px 10px", cursor: "pointer",
@@ -3291,6 +3646,7 @@ export default function TileEstimator() {
           ["estimate",  "📐", "Estimate"],
           ["customers", "👥", "Customers"],
           ["history",   "📋", "History"],
+          ["accounting","📊", "Accounting"],
           ["settings",  "⚙",  "Settings"],
         ].map(([key, icon, label]) => {
           const active = page === key;
@@ -4013,6 +4369,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.9.0 — Materials can now use a custom waste % instead of the job default; Tile Types can be assigned Required Services that auto-enable when you pick that tile on the estimator; sent estimates now save true cost, profit $, and margin % (shown as a breakdown in History); new Accounting tab with Day/Week/Month/Quarter/Year views showing net profit, total charged, total expense, average margin, a profit chart, and a searchable job list per period",
           "v1.8.0 — New Shopping List: generate a materials buy-list from any sent estimate or draft, with the tile itself, thinset/grout, and every assigned service material auto-quantified; check items off as you buy them, add custom items, and export a text list to take to the supplier. Also added Job Status for sent estimates (Awaiting Approval / Approved / Complete / Declined, set manually) and Materials Status (Need to Buy / All Purchased, tracked automatically from your shopping list checkboxes) — both shown as badges in History",
           "v1.7.0 — Materials sold by coverage (bags, boxes, sheets, rolls, etc.) now round up to whole units so costs match what you'd actually buy; added an optional per-material waste % and a new Linear Feet job input for trim/edge/cove-base materials priced by the linear foot instead of area; flat-priced materials (corners, end caps) now support a per-job quantity",
           "v1.6.0 — Materials, Tile Types, and Services redesigned as compact grouped lists with an Add/Edit popup form instead of always-expanded rows; new Share Pricing Setup export/import lets you send just your materials/tiles/services to another device with a conflict-review screen; added a Check Price button that opens Home Depot, Lowe's, or Floor & Decor search for a material or tile",
