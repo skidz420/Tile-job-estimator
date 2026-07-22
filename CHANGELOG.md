@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.0] - 2026-07-22
+### Added
+- **Per-material custom waste %** — materials with waste enabled can now use their own waste percentage instead of the job default, via a "Use a custom waste %" checkbox in the material editor
+- **Tile → Required Services** — each tile type can be assigned a list of required services in the tile editor; selecting that tile on the estimator auto-enables its assigned services (never disables anything you've already turned on)
+- **Profit tracking in history** — sent estimates now save true cost, profit $, and margin % alongside the customer price; History shows a Charged/Cost/Profit/Margin breakdown when a record is expanded, plus a rollup totals bar across whatever's currently filtered in the Sent list
+- **New Accounting tab** — a dedicated bottom-nav tab showing net profit, total charged, total expense, average margin, and job count for a selected period (Day / Week / Month / Quarter / Year), with a period navigator, a profit-by-sub-period bar chart, and a searchable list of jobs in that period
+### Note
+- Profit tracking only applies going forward — estimates saved before this version won't have cost/profit data and are excluded from Accounting/History totals (with a note shown when that's the case)
+
 ## [1.8.0] - 2026-07-22
 ### Added
 - **Shopping List** — every sent estimate and saved draft now has a 🛒 List button in History that generates a materials buy-list for that job: the tile itself (with waste), thinset/grout, and every material assigned to an enabled service, each auto-quantified using the same purchase-accurate rounding as the estimator
