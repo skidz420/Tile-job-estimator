@@ -527,7 +527,7 @@ function ServicePicker({ services, assignedIds, onToggle }) {
     );
   }
   return (
-    <div style={{ border: "1px solid #2e2518", borderRadius: 6, background: "#0f0d0a", maxHeight: 240, overflowY: "auto", padding: "6px 0" }}>
+    <div style={{ border: "1px solid #2e2518", borderRadius: 6, background: "#0f0d0a", padding: "6px 0" }}>
       {services.map(sv => {
         const assigned = assignedIds.includes(sv.id);
         return (
@@ -2656,7 +2656,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 }
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -4369,6 +4369,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.9.1 — Fixed the Required Services checklist in the Tile Type editor cutting off after ~6 services on mobile: it had its own nested scroll area inside the already-scrolling modal, which doesn't scroll reliably with touch. It now grows naturally so every service is reachable via the modal's own scroll",
           "v1.9.0 — Materials can now use a custom waste % instead of the job default; Tile Types can be assigned Required Services that auto-enable when you pick that tile on the estimator; sent estimates now save true cost, profit $, and margin % (shown as a breakdown in History); new Accounting tab with Day/Week/Month/Quarter/Year views showing net profit, total charged, total expense, average margin, a profit chart, and a searchable job list per period",
           "v1.8.0 — New Shopping List: generate a materials buy-list from any sent estimate or draft, with the tile itself, thinset/grout, and every assigned service material auto-quantified; check items off as you buy them, add custom items, and export a text list to take to the supplier. Also added Job Status for sent estimates (Awaiting Approval / Approved / Complete / Declined, set manually) and Materials Status (Need to Buy / All Purchased, tracked automatically from your shopping list checkboxes) — both shown as badges in History",
           "v1.7.0 — Materials sold by coverage (bags, boxes, sheets, rolls, etc.) now round up to whole units so costs match what you'd actually buy; added an optional per-material waste % and a new Linear Feet job input for trim/edge/cove-base materials priced by the linear foot instead of area; flat-priced materials (corners, end caps) now support a per-job quantity",
