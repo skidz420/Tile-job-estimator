@@ -301,18 +301,81 @@ function consumableCost(c, area, linearFeet = 0, wastePct = 0, qty = 1) {
   return 0;
 }
 
+// ── Areas: a job can be made of several areas (Kitchen Floor, Backsplash, Shower...), each
+// with its own sqft/tile/thinset/grout/services. One customer + one combined price for the whole job. ──
+function newAreaInput() {
+  return {
+    id: uid(), jobTypeId: null, name: "", sqft: "", linearFt: "",
+    tileId: null, thinsetId: null, groutId: null, tilePriceSqFt: "", wastePercent: "10",
+    serviceState: {},
+  };
+}
+
+// Wraps a legacy pre-Areas record (flat sqft/tileId/etc.) into a single-item areas array,
+// so old saved estimates/drafts keep loading and displaying correctly.
+function areasOf(record) {
+  if (!record) return [];
+  if (Array.isArray(record.areas) && record.areas.length > 0) return record.areas;
+  return [{
+    id: record.tileId || "legacy",
+    jobTypeId: null, name: "",
+    sqft: record.sqft, linearFt: record.linearFt,
+    tileId: record.tileId, thinsetId: record.thinsetId, groutId: record.groutId,
+    tilePriceSqFt: record.tilePriceSqFt, wastePercent: record.wastePercent,
+    serviceState: record.serviceState || {},
+  }];
+}
+
+// Pure per-area cost calculation — the single source of truth used by the live estimator,
+// History display, shopping list, customer presentation, and every sent-estimate format.
+function computeAreaCost(input, settings) {
+  const area = nv(input.sqft);
+  const linearFeet = nv(input.linearFt);
+  const wastePct = (parseFloat(input.wastePercent) || 0) / 100;
+  const tile = (settings.tiles || []).find(t => t.id === input.tileId) || null;
+  const laborRate = nv(tile?.labor);
+  const tileWithWaste = area * (1 + wastePct);
+  const tileCostPerSqFt = parseFloat(input.tilePriceSqFt) || 0;
+  const tileCost = tileWithWaste * tileCostPerSqFt;
+  const laborCost = area * laborRate;
+
+  const thinsetC = pickConsumableByRole(settings.consumables, "thinset", input.thinsetId);
+  const groutC   = pickConsumableByRole(settings.consumables, "grout", input.groutId);
+  const thinsetCost = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
+  const groutCost   = groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
+
+  const serviceState = input.serviceState || {};
+  const enabledServices = (settings.services || []).filter(sv => serviceState[sv.id]?.enabled);
+  function getServiceCost(sv) {
+    const laborCostSv = nv(serviceState[sv.id]?.overrides?.__labor__ ?? sv.laborPerSqFt) * area;
+    const matCost = (sv.consumableIds || []).reduce((sum, cId) => {
+      const c = (settings.consumables || []).find(x => x.id === cId);
+      if (!c) return sum;
+      const override = serviceState[sv.id]?.overrides?.[cId];
+      const effectiveC = override !== undefined ? { ...c, bagPrice: override, unitCost: override } : c;
+      const qty = c.priceType === "flat" ? nv(serviceState[sv.id]?.overrides?.["qty__" + cId], 1) : 1;
+      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
+    }, 0);
+    return laborCostSv + matCost;
+  }
+  const servicesCost = enabledServices.reduce((sum, sv) => sum + getServiceCost(sv), 0);
+  const subtotal = tileCost + laborCost + thinsetCost + groutCost + servicesCost;
+
+  return {
+    area, linearFeet, wastePct, tile, laborRate, tileWithWaste, tileCostPerSqFt, tileCost, laborCost,
+    thinsetC, groutC, thinsetCost, groutCost, enabledServices, servicesCost, subtotal, getServiceCost,
+  };
+}
+
 // Builds the "what to buy" list for a saved estimate/draft: tile + always-on
 // thinset/grout + every material assigned to an enabled service, with overrides
 // applied exactly as the estimator applied them. Quantities use the same
 // coverage-unit rounding as the rest of the app.
 function buildShoppingListItems(estimate, settings) {
   if (!estimate) return [];
-  const area        = nv(estimate.sqft);
-  const linearFeet   = nv(estimate.linearFt);
-  const wastePct     = nv(estimate.wastePercent, 10) / 100;
-  const serviceState = estimate.serviceState || {};
-  const consumables  = (settings && settings.consumables) || [];
+  const consumables = (settings && settings.consumables) || [];
   const services     = (settings && settings.services) || [];
+  const tiles        = (settings && settings.tiles) || [];
 
   const lines = [];
   function addLine(c, qty, unitLabel, cost) {
@@ -325,7 +388,7 @@ function buildShoppingListItems(estimate, settings) {
       lines.push({ id: "m_" + c.id, materialId: c.id, name: c.name, qty, unitLabel, cost: cost || 0, note: c.note || "" });
     }
   }
-  function addMaterial(c, override, qtyOverride) {
+  function addMaterial(c, area, linearFeet, wastePct, override, qtyOverride) {
     if (!c) return;
     const effectiveC = override !== undefined ? { ...c, bagPrice: override, unitCost: override } : c;
     const flatQty = c.priceType === "flat" ? nv(qtyOverride, 1) : 1;
@@ -340,29 +403,37 @@ function buildShoppingListItems(estimate, settings) {
     }
   }
 
-  // Tile itself (skip if customer-supplied / no price entered)
-  const tileCostPerSqFt = nv(estimate.tilePriceSqFt);
-  if (estimate.tileName && tileCostPerSqFt > 0) {
-    const tileWithWaste = area * (1 + wastePct);
-    lines.push({
-      id: "tile_" + (estimate.tileId || "x"), materialId: "tile", name: estimate.tileName,
-      qty: Math.ceil(tileWithWaste), unitLabel: "sqft", cost: tileWithWaste * tileCostPerSqFt, note: "Includes waste",
-    });
-  }
+  areasOf(estimate).forEach(a => {
+    const area        = nv(a.sqft);
+    const linearFeet  = nv(a.linearFt);
+    const wastePct    = nv(a.wastePercent, 10) / 100;
+    const serviceState = a.serviceState || {};
+    const tile = tiles.find(t => t.id === a.tileId);
 
-  // Thinset & grout are always part of the job — use whichever brand was picked for this estimate
-  const thinsetC2 = pickConsumableByRole(consumables, "thinset", estimate.thinsetId);
-  const groutC2   = pickConsumableByRole(consumables, "grout", estimate.groutId);
-  [thinsetC2, groutC2].forEach(c => { if (c) addMaterial(c); });
+    // Tile itself (skip if customer-supplied / no price entered)
+    const tileCostPerSqFt = nv(a.tilePriceSqFt);
+    if (tile && tileCostPerSqFt > 0) {
+      const tileWithWaste = area * (1 + wastePct);
+      const existing = lines.find(l => l.materialId === "tile_" + tile.id);
+      const addQty = Math.ceil(tileWithWaste), addCost = tileWithWaste * tileCostPerSqFt;
+      if (existing) { existing.qty += addQty; existing.cost += addCost; }
+      else lines.push({ id: "tile_" + tile.id, materialId: "tile_" + tile.id, name: tile.name, qty: addQty, unitLabel: "sqft", cost: addCost, note: "Includes waste" });
+    }
 
-  // Materials from every enabled service
-  services.filter(sv => serviceState[sv.id]?.enabled).forEach(sv => {
-    (sv.consumableIds || []).forEach(cId => {
-      const c = consumables.find(x => x.id === cId);
-      if (!c) return;
-      const override = serviceState[sv.id]?.overrides?.[cId];
-      const qtyOverride = serviceState[sv.id]?.overrides?.["qty__" + cId];
-      addMaterial(c, override, qtyOverride);
+    // Thinset & grout are always part of the job — use whichever brand was picked for this area
+    const thinsetC2 = pickConsumableByRole(consumables, "thinset", a.thinsetId);
+    const groutC2   = pickConsumableByRole(consumables, "grout", a.groutId);
+    [thinsetC2, groutC2].forEach(c => { if (c) addMaterial(c, area, linearFeet, wastePct); });
+
+    // Materials from every enabled service in this area
+    services.filter(sv => serviceState[sv.id]?.enabled).forEach(sv => {
+      (sv.consumableIds || []).forEach(cId => {
+        const c = consumables.find(x => x.id === cId);
+        if (!c) return;
+        const override = serviceState[sv.id]?.overrides?.[cId];
+        const qtyOverride = serviceState[sv.id]?.overrides?.["qty__" + cId];
+        addMaterial(c, area, linearFeet, wastePct, override, qtyOverride);
+      });
     });
   });
 
@@ -2497,58 +2568,22 @@ function ShoppingListModal({ estimate, settings, onClose }) {
 }
 
 // ─── Customer Presentation Mode ───────────────────────────────────────────────
-function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, area, linearFeet, wastePct, tile,
-  tileWithWaste, tilePriceSqFt, enabledServices, serviceState, jobNotes, trueCost, markupMode,
-  markupPercent, estimateNumber, thinsetId, groutId, onClose }) {
+function CustomerPresentation({ settings, customerName, projectDesc, customerPrice, areas,
+  jobNotes, trueCost, markupMode, markupPercent, estimateNumber, onClose }) {
 
   const c = settings.contractor || {};
   const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtD = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
   const mp = cost => fmtD(cost * ratio);
-  const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-  const allCons = settings.consumables || [];
-  const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
-  const groutC   = pickConsumableByRole(allCons, "grout", groutId);
   const firstName = customerName ? customerName.split(" ")[0] : "";
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const estNum = String(estimateNumber || 1).padStart(4, "0");
 
-  function getServiceTotal(sv) {
-    const st = serviceState[sv.id] || {};
-    const labor = (area || 0) * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
-    const mats = (sv.consumableIds || []).reduce((sum, cId) => {
-      const cons = allCons.find(x => x.id === cId);
-      if (!cons) return sum;
-      const ovVal = st.overrides?.[cId];
-      const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
-      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-    }, 0);
-    return labor + mats;
-  }
-
-  const svList = enabledServices || [];
-
-  // Compute category totals for summary
-  const tileMat = tileSupplied ? 0 : (tileWithWaste || 0) * (parseFloat(tilePriceSqFt) || 0);
-  const thinMat = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
-  const groutMat = groutC  ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
-  const svMatCost = svList.reduce((sum, sv) => {
-    const st = serviceState[sv.id] || {};
-    return sum + (sv.consumableIds||[]).reduce((s2, cId) => {
-      const cons = allCons.find(x => x.id === cId);
-      if (!cons) return s2;
-      const ovVal = st.overrides?.[cId];
-      const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
-      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-      return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-    }, 0);
-  }, 0);
-  const miscCost = trueCost - (tileMat + (tile ? (area||0)*(parseFloat(tile.labor)||0) : 0) + thinMat + groutMat + svList.reduce((s,sv)=>s+getServiceTotal(sv),0));
-  const totalMat  = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
-  const totalLabor = tile ? (area||0) * (parseFloat(tile.labor)||0) : 0;
-  const totalSvc   = svList.reduce((s,sv) => s + getServiceTotal(sv), 0);
+  const computed = areas.map(a => ({ input: a, ...computeAreaCost(a, settings) }));
+  const totalSqft = areas.reduce((s, a) => s + nv(a.sqft), 0);
+  const multiArea = computed.length > 1;
+  const allServiceNames = computed.flatMap(c => c.enabledServices.map(sv => sv.name));
 
   return (
     <div style={{
@@ -2612,23 +2647,19 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
           <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Project Details</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Area</div>
-              <div style={{ fontSize: 20, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{area} sqft</div>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Total Area</div>
+              <div style={{ fontSize: 20, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{totalSqft} sqft{multiArea ? ` · ${computed.length} areas` : ""}</div>
             </div>
             <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Tile</div>
-              <div style={{ fontSize: 16, color: "#d4c49a", fontFamily: "'Georgia','Times New Roman',serif" }}>{tile?.name || "—"}</div>
-            </div>
-            {!tileSupplied && (
-              <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Material to Order</div>
-                <div style={{ fontSize: 18, color: "#d4c49a", fontFamily: "'Georgia','Times New Roman',serif" }}>{(tileWithWaste||0).toFixed(0)} sqft</div>
+              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{multiArea ? "Areas" : "Tile"}</div>
+              <div style={{ fontSize: multiArea ? 13 : 16, color: "#d4c49a", fontFamily: multiArea ? "sans-serif" : "'Georgia','Times New Roman',serif" }}>
+                {multiArea ? computed.map(c => c.tile?.name || "—").join(", ") : (computed[0]?.tile?.name || "—")}
               </div>
-            )}
-            {svList.length > 0 && (
-              <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px", gridColumn: tileSupplied ? "1 / -1" : "auto" }}>
+            </div>
+            {allServiceNames.length > 0 && (
+              <div style={{ background: "rgba(193,151,72,0.06)", border: "1px solid #2e2518", borderRadius: 8, padding: "14px 16px", gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Additional Services</div>
-                <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif" }}>{svList.map(sv => sv.name).join(", ")}</div>
+                <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif" }}>{allServiceNames.join(", ")}</div>
               </div>
             )}
           </div>
@@ -2640,109 +2671,125 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
           )}
         </div>
 
-        {/* Price breakdown — full itemized */}
+        {/* Scope of Work — itemized per area */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>Price Breakdown</div>
-          <div style={{ background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ fontSize: 11, color: "#c19748", letterSpacing: 4, textTransform: "uppercase", fontFamily: "sans-serif", marginBottom: 16 }}>
+            {multiArea ? "Scope of Work" : "Price Breakdown"}
+          </div>
 
-            {/* Tile material */}
-            {tileSupplied ? (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
-                <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Tile Material</span>
-                <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Customer supplied</span>
-              </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
-                <div>
-                  <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile?.name} — Tile Material</div>
-                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(tileWithWaste||0).toFixed(0)} sqft ordered (includes waste)</div>
-                </div>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(tileMat)}</span>
-              </div>
-            )}
+          {computed.map((ca, idx) => {
+            const { input, tile, tileWithWaste, tileCostPerSqFt, tileCost, laborCost, thinsetC, groutC,
+              thinsetCost, groutCost, enabledServices, subtotal, area, linearFeet, wastePct } = ca;
+            const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
+            const svList = enabledServices;
 
-            {/* Installation labor */}
-            {tile && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
-                <div>
-                  <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile.name} — Installation</div>
-                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{area} sqft</div>
-                </div>
-                <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(totalLabor)}</span>
-              </div>
-            )}
-
-            {/* Thinset */}
-            {thinsetC && (() => {
-              const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
-              return cost > 0 ? (
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
-                  <div>
-                    <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Thinset / Mortar</div>
-                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(thinsetC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(thinsetC), n)}`; })()}</div>
+            return (
+              <div key={input.id} style={{ marginBottom: idx < computed.length - 1 ? 20 : 0, background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 10, overflow: "hidden" }}>
+                {multiArea && (
+                  <div style={{ padding: "13px 20px", background: "rgba(193,151,72,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 15, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{tile?.name || `Area ${idx + 1}`}</div>
+                      <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{area} sqft</div>
+                    </div>
+                    <div style={{ fontSize: 15, color: "#c19748", fontWeight: 700, fontFamily: "sans-serif" }}>{mp(subtotal)}</div>
                   </div>
-                  <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
-                </div>
-              ) : null;
-            })()}
+                )}
 
-            {/* Grout */}
-            {groutC && (() => {
-              const cost = consumableCost(groutC, area, linearFeet, wastePct);
-              return cost > 0 ? (
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: svList.length > 0 ? "1px solid #1a1710" : "none" }}>
-                  <div>
-                    <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Grout</div>
-                    <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(groutC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(groutC), n)}`; })()}</div>
+                {/* Tile material */}
+                {tileSupplied ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                    <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Tile Material</span>
+                    <span style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", fontStyle: "italic" }}>Customer supplied</span>
                   </div>
-                  <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(cost)}</span>
-                </div>
-              ) : null;
-            })()}
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                    <div>
+                      <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile?.name} — Tile Material</div>
+                      <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(tileWithWaste||0).toFixed(0)} sqft ordered (includes waste)</div>
+                    </div>
+                    <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(tileCost)}</span>
+                  </div>
+                )}
 
-            {/* Each service */}
-            {svList.map((sv, svIdx) => {
-              const st = serviceState[sv.id] || {};
-              const svConsumables = (sv.consumableIds||[]).map(cId => allCons.find(x => x.id === cId)).filter(Boolean);
-              const isLast = svIdx === svList.length - 1;
-              return (
-                <div key={sv.id} style={{ borderBottom: isLast ? "none" : "1px solid #1a1710" }}>
-                  {/* Service header */}
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px 6px", background: "rgba(193,151,72,0.04)" }}>
-                    <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name}</span>
-                    <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(getServiceTotal(sv))}</span>
+                {/* Installation labor */}
+                {tile && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                    <div>
+                      <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{tile.name} — Installation</div>
+                      <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{area} sqft</div>
+                    </div>
+                    <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(laborCost)}</span>
                   </div>
-                  {/* Service labor */}
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
-                    <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>Labor</span>
-                    <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp((area||0) * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt)||0))}</span>
+                )}
+
+                {/* Thinset */}
+                {thinsetC && thinsetCost > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: "1px solid #1a1710" }}>
+                    <div>
+                      <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{thinsetC.name}</div>
+                      <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(thinsetC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(thinsetC), n)}`; })()}</div>
+                    </div>
+                    <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(thinsetCost)}</span>
                   </div>
-                  {/* Service materials */}
-                  {svConsumables.map(c => {
-                    const ovVal = st.overrides?.[c.id];
-                    const effectiveC = ovVal !== undefined ? { ...c, bagPrice: ovVal, unitCost: ovVal } : c;
-                    const qty = c.priceType === "flat" ? nv(st.overrides?.["qty__" + c.id], 1) : 1;
-                    const lineCost = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-                    return lineCost > 0 ? (
-                      <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
-                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.name}</span>
-                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp(lineCost)}</span>
+                )}
+
+                {/* Grout */}
+                {groutC && groutCost > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderBottom: svList.length > 0 ? "1px solid #1a1710" : "none" }}>
+                    <div>
+                      <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{groutC.name}</div>
+                      <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{(() => { const n = materialUnits(groutC, area, linearFeet, wastePct); return `${n} ${pluralUnit(unitLabelOf(groutC), n)}`; })()}</div>
+                    </div>
+                    <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(groutCost)}</span>
+                  </div>
+                )}
+
+                {/* Each service */}
+                {svList.map((sv, svIdx) => {
+                  const st = input.serviceState[sv.id] || {};
+                  const svConsumables = (sv.consumableIds||[]).map(cId => settings.consumables.find(x => x.id === cId)).filter(Boolean);
+                  const isLast = svIdx === svList.length - 1;
+                  return (
+                    <div key={sv.id} style={{ borderBottom: isLast ? "none" : "1px solid #1a1710" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px 6px", background: "rgba(193,151,72,0.04)" }}>
+                        <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name}</span>
+                        <span style={{ fontSize: 14, color: "#c19748", fontFamily: "sans-serif", flexShrink: 0, marginLeft: 16 }}>{mp(ca.getServiceCost(sv))}</span>
                       </div>
-                    ) : null;
-                  })}
-                  <div style={{ height: 6 }} />
-                </div>
-              );
-            })}
+                      <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
+                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>Labor</span>
+                        <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp((area||0) * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt)||0))}</span>
+                      </div>
+                      {svConsumables.map(c => {
+                        const ovVal = st.overrides?.[c.id];
+                        const effectiveC = ovVal !== undefined ? { ...c, bagPrice: ovVal, unitCost: ovVal } : c;
+                        const qty = c.priceType === "flat" ? nv(st.overrides?.["qty__" + c.id], 1) : 1;
+                        const lineCost = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
+                        return lineCost > 0 ? (
+                          <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 20px 4px 32px" }}>
+                            <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{c.name}</span>
+                            <span style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>{mp(lineCost)}</span>
+                          </div>
+                        ) : null;
+                      })}
+                      <div style={{ height: 6 }} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
 
-            {/* Misc supplies */}
-            {miscCost > 0.01 && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 20px", borderTop: "1px solid #1a1710" }}>
+          {/* Misc supplies (applies to the whole job, shown once at the end) */}
+          {(() => {
+            const knownCost = computed.reduce((s, c) => s + c.subtotal, 0);
+            const miscCost = trueCost - knownCost;
+            return miscCost > 0.01 ? (
+              <div style={{ marginTop: 12, background: "rgba(193,151,72,0.04)", border: "1px solid #2e2518", borderRadius: 10, display: "flex", justifyContent: "space-between", padding: "13px 20px" }}>
                 <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>Supplies & Sundries</span>
                 <span style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif" }}>{mp(miscCost)}</span>
               </div>
-            )}
-          </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Total — hero number */}
@@ -2752,7 +2799,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
             {fmt(customerPrice)}
           </div>
           <div style={{ fontSize: 14, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 8 }}>
-            {fmtD(customerPrice / (area || 1))} per square foot
+            {fmtD(customerPrice / (totalSqft || 1))} per square foot
           </div>
         </div>
 
@@ -2780,8 +2827,9 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
   );
 }
 
+
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.11.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -2839,6 +2887,231 @@ function UpdateBanner() {
   );
 }
 
+function AreaCard({ index, input, computed, settings, expanded, onToggleExpand, onUpdate, onRemove, canRemove,
+  onSelectTile, onSelectJobType, onToggleService, onSetOverride, getOverride }) {
+  const { area, linearFeet, wastePct, tile, tileWithWaste, enabledServices, subtotal, getServiceCost } = computed;
+  const thinsetOptions = settings.consumables.filter(c => c.role === "thinset");
+  const groutOptions   = settings.consumables.filter(c => c.role === "grout");
+
+  return (
+    <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 8, marginBottom: 12, overflow: "hidden" }}>
+      <button onClick={onToggleExpand} style={{
+        width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "14px 16px", background: "none", border: "none", cursor: "pointer", color: "#f0ede6",
+      }}>
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "sans-serif" }}>
+            {tile ? `${index + 1}. ${tile.name}` : `Area ${index + 1}`}
+          </div>
+          <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", marginTop: 2 }}>
+            {area > 0 ? `${area} sqft` : "No sqft yet"}{tile ? "" : " · No tile yet"}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {area > 0 && tile && <span style={{ fontSize: 13, color: "#c19748", fontWeight: 700, fontFamily: "sans-serif" }}>{fmt(subtotal)}</span>}
+          <span style={{ fontSize: 12, color: "#5a4f38" }}>{expanded ? "▾" : "▸"}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: "0 16px 18px", borderTop: "1px solid #1a1710" }}>
+
+          {/* Job Type */}
+          <div style={{ marginTop: 16, marginBottom: 18 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>Job Type (optional)</div>
+            {(!settings.jobTypes || settings.jobTypes.length === 0) ? (
+              <EmptyState msg="No job types yet — add some in ⚙ Settings → Job Types" />
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px,1fr))", gap: 8 }}>
+                {settings.jobTypes.map(jt => (
+                  <button key={jt.id} onClick={() => onSelectJobType(jt)} style={{
+                    background: input.jobTypeId === jt.id ? "#c19748" : "#1c1812",
+                    border: `1px solid ${input.jobTypeId === jt.id ? "#c19748" : "#2e2518"}`,
+                    borderRadius: 6, padding: "10px 6px", cursor: "pointer",
+                    color: input.jobTypeId === jt.id ? "#0f0f0f" : "#c8b98a",
+                    textAlign: "center", transition: "all 0.18s",
+                  }}>
+                    <div style={{ fontSize: 18, marginBottom: 3 }}>{jt.icon}</div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, fontFamily: "sans-serif" }}>{jt.name || "Unnamed"}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Square Footage */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 5 }}>Square Footage</div>
+            <input type="number" placeholder="e.g. 200" value={input.sqft} onChange={e => onUpdate({ sqft: e.target.value })} style={inputStyle} />
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...fieldLabelStyle, marginBottom: 5 }}>Linear Feet (optional)</div>
+              <input type="number" placeholder="e.g. 60" value={input.linearFt} onChange={e => onUpdate({ linearFt: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+
+          {/* Tile Type */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>Tile Type</div>
+            {settings.tiles.length === 0 ? <EmptyState msg="No tile types yet — add some in ⚙ Settings → Tile Types" /> : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px,1fr))", gap: 8 }}>
+                {settings.tiles.map(t => (
+                  <button key={t.id} onClick={() => onSelectTile(t)} style={{
+                    background: input.tileId === t.id ? "#c19748" : "#1c1812",
+                    border: `1px solid ${input.tileId === t.id ? "#c19748" : "#2e2518"}`,
+                    borderRadius: 6, padding: "12px 8px", cursor: "pointer",
+                    color: input.tileId === t.id ? "#0f0f0f" : "#c8b98a",
+                    textAlign: "center", transition: "all 0.18s",
+                  }}>
+                    <div style={{ fontSize: 20, marginBottom: 5 }}>{t.icon}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, fontFamily: "sans-serif" }}>{t.name || "Unnamed"}</div>
+                    <div style={{ fontSize: 10.5, marginTop: 3, opacity: 0.75, fontFamily: "sans-serif" }}>${nv(t.labor)}/sqft</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {tile && (
+              <>
+                <div style={{ marginTop: 10, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 14px", display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+                  <InfoPill label="Labor Rate"    value={`$${nv(tile.labor)}/sqft`} />
+                  <InfoPill label="Sqft to Order" value={area > 0 ? `${tileWithWaste.toFixed(0)} sqft` : "—"} gold />
+                </div>
+                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 10.5, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Tile Cost $/sqft</div>
+                    <input type="number" placeholder="0.00" value={input.tilePriceSqFt} onChange={e => onUpdate({ tilePriceSqFt: e.target.value })} style={iStyle} min="0" />
+                  </div>
+                  <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 10.5, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Waste %</div>
+                    <input type="number" placeholder="10" value={input.wastePercent} onChange={e => onUpdate({ wastePercent: e.target.value })} style={iStyle} min="0" />
+                  </div>
+                </div>
+              </>
+            )}
+            {(thinsetOptions.length > 0 || groutOptions.length > 0) && (
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {thinsetOptions.length > 0 && (
+                  <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 10.5, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Thinset</div>
+                    <select value={input.thinsetId || thinsetOptions[0].id} onChange={e => onUpdate({ thinsetId: e.target.value })} style={{ ...iStyle, cursor: "pointer" }}>
+                      {thinsetOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
+                    </select>
+                  </div>
+                )}
+                {groutOptions.length > 0 && (
+                  <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 10.5, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Grout</div>
+                    <select value={input.groutId || groutOptions[0].id} onChange={e => onUpdate({ groutId: e.target.value })} style={{ ...iStyle, cursor: "pointer" }}>
+                      {groutOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Additional Services */}
+          <div style={{ marginBottom: 6 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>Additional Services</div>
+            {settings.services.length === 0 ? <EmptyState msg="No services yet — add some in ⚙ Settings → Services" /> : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {settings.services.map(sv => {
+                  const isOn   = !!input.serviceState[sv.id]?.enabled;
+                  const svCost = getServiceCost(sv);
+                  const assignedConsumables = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
+                  return (
+                    <div key={sv.id} style={{ background: isOn ? "#1a1710" : "#0f0d0a", border: `1px solid ${isOn ? "#c19748" : "#2a2218"}`, borderRadius: 8, overflow: "hidden", transition: "all 0.15s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", cursor: "pointer" }} onClick={() => onToggleService(sv.id)}>
+                        <Checkbox checked={isOn} onChange={() => onToggleService(sv.id)} onClick={e => e.stopPropagation()} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13.5, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name || "Unnamed"}</div>
+                          <div style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>
+                            Labor ${nv(sv.laborPerSqFt)}/sqft · {assignedConsumables.length} material{assignedConsumables.length !== 1 ? "s" : ""}
+                            {isOn && area > 0 && <span style={{ color: "#c19748", marginLeft: 10 }}>{fmt(svCost)} total</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {isOn && (
+                        <div style={{ borderTop: "1px solid #2a2518", padding: "10px 13px 12px" }}>
+                          <div style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 8, fontStyle: "italic" }}>
+                            Override any cost for this area — leave as-is to use your defaults
+                          </div>
+
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 60px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                            <div style={{ fontSize: 12.5, color: "#c8b98a", fontFamily: "sans-serif" }}>Labor</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ color: "#5a4f38", fontSize: 11 }}>$</span>
+                              <input type="number" value={getOverride(sv.id, "__labor__", sv.laborPerSqFt)}
+                                onChange={e => onSetOverride(sv.id, "__labor__", e.target.value)}
+                                style={{ ...iStyle, flex: 1, fontSize: 12.5 }} />
+                            </div>
+                            <div style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 6px", textAlign: "center" }}>/sqft</div>
+                          </div>
+
+                          {assignedConsumables.map(c => {
+                            const defaultCost = c.priceType === "bag" ? c.bagPrice : c.unitCost;
+                            const ovVal = getOverride(sv.id, c.id, defaultCost);
+                            const effectiveC = { ...c, bagPrice: ovVal, unitCost: ovVal };
+                            const qty = c.priceType === "flat" ? nv(getOverride(sv.id, "qty__" + c.id, 1), 1) : 1;
+                            const lineTotal = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
+                            const basisNote = c.priceType === "bag" && c.coverageBasis === "linear"
+                              ? `${materialUnits(effectiveC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(c), materialUnits(effectiveC, area, linearFeet, wastePct))} · ${linearFeet} ln ft`
+                              : null;
+                            return (
+                              <div key={c.id} style={{ marginBottom: 8 }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 60px", gap: 8, alignItems: "center" }}>
+                                  <div>
+                                    <div style={{ fontSize: 12.5, color: "#c8b98a", fontFamily: "sans-serif" }}>{c.name}</div>
+                                    {area > 0 && <div style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif" }}>{fmt(lineTotal)} total{basisNote ? ` · ${basisNote}` : ""}</div>}
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ color: "#5a4f38", fontSize: 11 }}>$</span>
+                                    <input type="number" value={ovVal} onChange={e => onSetOverride(sv.id, c.id, e.target.value)}
+                                      style={{ ...iStyle, flex: 1, fontSize: 12.5 }} />
+                                  </div>
+                                  <div style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 6px", textAlign: "center" }}>
+                                    {c.priceType === "bag" ? `$/${unitLabelOf(c)}` : c.priceType === "sqft" ? "/sqft" : "flat"}
+                                  </div>
+                                </div>
+                                {c.priceType === "flat" && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                                    <span style={{ fontSize: 10.5, color: "#5a4f38", fontFamily: "sans-serif" }}>Quantity</span>
+                                    <input type="number" min="0" value={qty}
+                                      onChange={e => onSetOverride(sv.id, "qty__" + c.id, e.target.value)}
+                                      style={{ ...iStyle, width: 56, fontSize: 11.5, padding: "4px 8px" }} />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {area > 0 && (
+                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #2a2010", display: "flex", justifyContent: "space-between", fontFamily: "sans-serif" }}>
+                              <span style={{ fontSize: 11.5, color: "#5a4f38" }}>Service total</span>
+                              <span style={{ fontSize: 13, color: "#e8c870" }}>{fmt(svCost)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {canRemove && (
+            <button onClick={onRemove} style={{
+              marginTop: 12, fontSize: 11.5, color: "#b05050", background: "none",
+              border: "1px solid #3a2020", borderRadius: 5, padding: "6px 12px", cursor: "pointer", fontFamily: "sans-serif",
+            }}>Remove This Area</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TileEstimator() {
   const [page, setPage] = useState("estimate");
   const [settings, setSettings] = useState(() => {
@@ -2876,14 +3149,8 @@ export default function TileEstimator() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [unsavedWarning, setUnsavedWarning] = useState(false);
 
-  const [sqft, setSqft]                     = useState("");
-  const [linearFt, setLinearFt]             = useState("");
-  const [selectedTileId, setSelectedTileId] = useState(null);
-  const [selectedJobTypeId, setSelectedJobTypeId] = useState(null);
-  const [selectedThinsetId, setSelectedThinsetId] = useState(null);
-  const [selectedGroutId, setSelectedGroutId] = useState(null);
-  const [tilePriceSqFt, setTilePriceSqFt]   = useState("");
-  const [wastePercent, setWastePercent]     = useState("10");
+  const [areas, setAreas] = useState(() => [newAreaInput()]);
+  const [expandedAreaId, setExpandedAreaId] = useState(null);
   const [jobNotes, setJobNotes]             = useState("");
   const [customerName, setCustomerName]     = useState("");
   const [customerEmail, setCustomerEmail]   = useState("");
@@ -2891,8 +3158,6 @@ export default function TileEstimator() {
   const [projectDesc, setProjectDesc]       = useState("");
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustForm, setNewCustForm]       = useState({ name: "", email: "", phone: "" });
-  // serviceState: { [serviceId]: { enabled, overrides: { [consumableId]: costOverride } } }
-  const [serviceState, setServiceState]     = useState({});
   const [markupMode, setMarkupMode]         = useState("percent");
   const [markupPercent, setMarkupPercent]   = useState(40);
   const [manualPrice, setManualPrice]       = useState("");
@@ -2926,9 +3191,12 @@ export default function TileEstimator() {
     try { localStorage.setItem("tje_settings", JSON.stringify(s)); } catch (e) {}
     setSettings(s);
     setMarkupPercent(nv(s.defaultMarkup, 40));
-    if (selectedTileId && !s.tiles.find(t => t.id === selectedTileId)) setSelectedTileId(null);
-    if (selectedThinsetId && !s.consumables.find(c => c.id === selectedThinsetId)) setSelectedThinsetId(null);
-    if (selectedGroutId && !s.consumables.find(c => c.id === selectedGroutId)) setSelectedGroutId(null);
+    setAreas(prev => prev.map(a => ({
+      ...a,
+      tileId: (a.tileId && !s.tiles.find(t => t.id === a.tileId)) ? null : a.tileId,
+      thinsetId: (a.thinsetId && !s.consumables.find(c => c.id === a.thinsetId)) ? null : a.thinsetId,
+      groutId: (a.groutId && !s.consumables.find(c => c.id === a.groutId)) ? null : a.groutId,
+    })));
     setSavedMsg(true);
     setUnsavedWarning(false);
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
@@ -2948,16 +3216,12 @@ export default function TileEstimator() {
       trueCost,
       profit,
       margin,
-      // Full input snapshot
-      sqft: area,
-      linearFt: linearFeet,
-      tileId: selectedTileId,
-      tileName: tile?.name || "",
-      thinsetId: selectedThinsetId,
-      groutId: selectedGroutId,
-      tilePriceSqFt: tilePriceSqFt || "",
-      wastePercent: wastePercent || "10",
-      serviceState: JSON.parse(JSON.stringify(serviceState)),
+      // Full input snapshot — one entry per area
+      areas: JSON.parse(JSON.stringify(areas)),
+      // Summary fields kept for list-view display and back-compat with older UI bits
+      sqft: totalSqft,
+      linearFt: areas.reduce((s, a) => s + nv(a.linearFt), 0),
+      tileName: computedAreas.length === 1 ? (computedAreas[0].tile?.name || "") : `${computedAreas.length} areas`,
       markupMode,
       markupPercent,
       jobNotes: jobNotes || "",
@@ -3030,15 +3294,10 @@ export default function TileEstimator() {
       customerPhone: customerPhone || "",
       projectDesc: projectDesc || "",
       totalPrice: customerPrice,
-      sqft: area,
-      linearFt: linearFeet,
-      tileId: selectedTileId,
-      tileName: tile?.name || "",
-      thinsetId: selectedThinsetId,
-      groutId: selectedGroutId,
-      tilePriceSqFt: tilePriceSqFt || "",
-      wastePercent: wastePercent || "10",
-      serviceState: JSON.parse(JSON.stringify(serviceState)),
+      areas: JSON.parse(JSON.stringify(areas)),
+      sqft: totalSqft,
+      linearFt: areas.reduce((s, a) => s + nv(a.linearFt), 0),
+      tileName: computedAreas.length === 1 ? (computedAreas[0].tile?.name || "") : `${computedAreas.length} areas`,
       markupMode,
       markupPercent,
       jobNotes: jobNotes || "",
@@ -3154,81 +3413,78 @@ export default function TileEstimator() {
     }
   }
 
-  const tile         = settings.tiles.find(t => t.id === selectedTileId);
-  const area         = nv(sqft);
-  const linearFeet   = nv(linearFt);
-  const laborRate    = nv(tile?.labor);
-  const wastePct     = (parseFloat(wastePercent) || 0) / 100;
-  const tileWithWaste    = area * (1 + wastePct);
-  const tileCostPerSqFt  = parseFloat(tilePriceSqFt) || 0;
-  const tileCost     = tileWithWaste * tileCostPerSqFt;
-  const laborCost    = area * laborRate;
-
-  // Thinset & grout come from consumables list
-  const thinsetC  = pickConsumableByRole(settings.consumables, "thinset", selectedThinsetId);
-  const groutC    = pickConsumableByRole(settings.consumables, "grout", selectedGroutId);
-  const thinsetCost = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
-  const groutCost   = groutC   ? consumableCost(groutC,   area, linearFeet, wastePct) : 0;
-
-  // Enabled services
-  const enabledServices = settings.services.filter(sv => serviceState[sv.id]?.enabled);
-
-  function getServiceCost(sv) {
-    const laborCostSv = nv(sv.laborPerSqFt) * area;
-    const matCost = sv.consumableIds.reduce((sum, cId) => {
-      const c = settings.consumables.find(x => x.id === cId);
-      if (!c) return sum;
-      const override = serviceState[sv.id]?.overrides?.[cId];
-      const effectiveC = override !== undefined ? { ...c, bagPrice: override, unitCost: override } : c;
-      const qty = c.priceType === "flat" ? nv(serviceState[sv.id]?.overrides?.["qty__" + cId], 1) : 1;
-      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-    }, 0);
-    return laborCostSv + matCost;
-  }
-
-  const servicesCost = enabledServices.reduce((sum, sv) => sum + getServiceCost(sv), 0);
-  const miscSupplies = laborCost * (nv(settings.miscPercent) / 100);
-  const trueCost     = tileCost + laborCost + thinsetCost + groutCost + servicesCost + miscSupplies;
+  // Per-area cost computation, then combined totals across every area in the job
+  const computedAreas = areas.map(a => ({ input: a, ...computeAreaCost(a, settings) }));
+  const totalSqft     = areas.reduce((sum, a) => sum + nv(a.sqft), 0);
+  const totalLaborCost = computedAreas.reduce((sum, c) => sum + c.laborCost, 0);
+  const areasSubtotal  = computedAreas.reduce((sum, c) => sum + c.subtotal, 0);
+  const miscSupplies   = totalLaborCost * (nv(settings.miscPercent) / 100);
+  const trueCost       = areasSubtotal + miscSupplies;
 
   const customerPrice = markupMode === "percent"
     ? trueCost * (1 + nv(markupPercent) / 100)
     : nv(manualPrice);
   const profit = customerPrice - trueCost;
   const margin = customerPrice > 0 ? (profit / customerPrice) * 100 : 0;
-  const canCalculate = area > 0 && tile;
+  const canCalculate = areas.length > 0 && areas.every(a => nv(a.sqft) > 0 && a.tileId);
 
-  function toggleService(id) {
-    setServiceState(p => ({ ...p, [id]: { ...p[id], enabled: !p[id]?.enabled } }));
+  // Generic per-area field updater
+  function updateArea(areaId, patch) {
+    setAreas(prev => prev.map(a => a.id === areaId ? { ...a, ...patch } : a));
   }
-  // Selecting a tile type auto-enables its required services (does not disable anything already on)
-  function selectTile(t) {
-    setSelectedTileId(t.id);
-    const required = t.serviceIds || [];
-    if (required.length === 0) return;
-    setServiceState(p => {
-      const next = { ...p };
-      required.forEach(svId => { next[svId] = { ...next[svId], enabled: true }; });
-      return next;
+  function addArea() {
+    const na = newAreaInput();
+    setAreas(prev => [...prev, na]);
+    setExpandedAreaId(na.id);
+  }
+  function removeArea(areaId) {
+    setAreas(prev => {
+      const next = prev.filter(a => a.id !== areaId);
+      return next.length > 0 ? next : [newAreaInput()];
     });
   }
-  // Selecting a job type auto-enables its bundled services (does not disable anything already on)
-  function selectJobType(jt) {
-    setSelectedJobTypeId(jt.id);
-    const required = jt.serviceIds || [];
-    if (required.length === 0) return;
-    setServiceState(p => {
-      const next = { ...p };
-      required.forEach(svId => { next[svId] = { ...next[svId], enabled: true }; });
-      return next;
-    });
-  }
-  function setOverride(svId, cId, val) {
-    setServiceState(p => ({
-      ...p, [svId]: { ...p[svId], overrides: { ...(p[svId]?.overrides || {}), [cId]: val } }
+  function toggleService(areaId, svId) {
+    setAreas(prev => prev.map(a => {
+      if (a.id !== areaId) return a;
+      const p = a.serviceState;
+      return { ...a, serviceState: { ...p, [svId]: { ...p[svId], enabled: !p[svId]?.enabled } } };
     }));
   }
-  function getOverride(svId, cId, defaultVal) {
-    const ov = serviceState[svId]?.overrides?.[cId];
+  // Selecting a tile type auto-enables its required services (does not disable anything already on)
+  function selectTile(areaId, t) {
+    setAreas(prev => prev.map(a => {
+      if (a.id !== areaId) return a;
+      const required = t.serviceIds || [];
+      let serviceState = a.serviceState;
+      if (required.length > 0) {
+        serviceState = { ...serviceState };
+        required.forEach(svId => { serviceState[svId] = { ...serviceState[svId], enabled: true }; });
+      }
+      return { ...a, tileId: t.id, serviceState };
+    }));
+  }
+  // Selecting a job type auto-enables its bundled services (does not disable anything already on)
+  function selectJobType(areaId, jt) {
+    setAreas(prev => prev.map(a => {
+      if (a.id !== areaId) return a;
+      const required = jt.serviceIds || [];
+      let serviceState = a.serviceState;
+      if (required.length > 0) {
+        serviceState = { ...serviceState };
+        required.forEach(svId => { serviceState[svId] = { ...serviceState[svId], enabled: true }; });
+      }
+      return { ...a, jobTypeId: jt.id, serviceState };
+    }));
+  }
+  function setOverride(areaId, svId, cId, val) {
+    setAreas(prev => prev.map(a => {
+      if (a.id !== areaId) return a;
+      const p = a.serviceState;
+      return { ...a, serviceState: { ...p, [svId]: { ...p[svId], overrides: { ...(p[svId]?.overrides || {}), [cId]: val } } } };
+    }));
+  }
+  function getOverride(areaInput, svId, cId, defaultVal) {
+    const ov = areaInput.serviceState?.[svId]?.overrides?.[cId];
     return ov !== undefined ? ov : String(defaultVal);
   }
 
@@ -3246,27 +3502,28 @@ export default function TileEstimator() {
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
   function resetEstimate() {
-    setSqft(""); setLinearFt(""); setSelectedTileId(null); setSelectedJobTypeId(null); setSelectedThinsetId(null); setSelectedGroutId(null); setTilePriceSqFt(""); setWastePercent("10");
+    setAreas([newAreaInput()]); setExpandedAreaId(null);
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
-    setServiceState({}); setMarkupPercent(nv(settings.defaultMarkup, 40));
+    setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function loadEstimate(record) {
-    setSqft(String(record.sqft || ""));
-    setLinearFt(String(record.linearFt || ""));
-    setSelectedTileId(record.tileId || null);
-    setSelectedThinsetId(record.thinsetId || null);
-    setSelectedGroutId(record.groutId || null);
-    setTilePriceSqFt(String(record.tilePriceSqFt || ""));
-    setWastePercent(String(record.wastePercent || "10"));
+    const loaded = areasOf(record).map(a => ({
+      id: a.id || uid(), jobTypeId: a.jobTypeId || null, name: a.name || "",
+      sqft: String(a.sqft || ""), linearFt: String(a.linearFt || ""),
+      tileId: a.tileId || null, thinsetId: a.thinsetId || null, groutId: a.groutId || null,
+      tilePriceSqFt: String(a.tilePriceSqFt || ""), wastePercent: String(a.wastePercent || "10"),
+      serviceState: a.serviceState || {},
+    }));
+    setAreas(loaded.length > 0 ? loaded : [newAreaInput()]);
+    setExpandedAreaId(loaded[0]?.id || null);
     setJobNotes(record.jobNotes || "");
     setCustomerName(record.customerName || "");
     setCustomerEmail(record.customerEmail || "");
     setCustomerPhone(record.customerPhone || "");
     setProjectDesc(record.projectDesc || "");
-    setServiceState(record.serviceState || {});
     setMarkupMode(record.markupMode || "percent");
     setMarkupPercent(record.markupPercent || nv(settings.defaultMarkup, 40));
     setManualPrice("");
@@ -3286,16 +3543,7 @@ export default function TileEstimator() {
           customerName=""
           projectDesc={jobNotes}
           customerPrice={customerPrice}
-          area={area}
-          linearFeet={linearFeet}
-          wastePct={wastePct}
-          tile={tile}
-          tileWithWaste={tileWithWaste}
-          tilePriceSqFt={tilePriceSqFt}
-          thinsetId={selectedThinsetId}
-          groutId={selectedGroutId}
-          enabledServices={enabledServices}
-          serviceState={serviceState}
+          areas={areas}
           jobNotes={jobNotes}
           trueCost={trueCost}
           markupMode={markupMode}
@@ -3460,212 +3708,46 @@ export default function TileEstimator() {
           </Section>
 
           {/* 01 */}
-          <Section label="01" title="Job Type (optional)">
-            <div style={{ fontSize: 12, color: "#6b5f4a", marginBottom: 10 }}>
-              Pick a preset like Kitchen Floor or Shower to auto-check the services that job usually needs. Skip this if you'd rather pick services yourself.
+          <Section label="01" title="Areas">
+            <div style={{ fontSize: 12, color: "#6b5f4a", marginBottom: 14 }}>
+              A job can have several areas — Kitchen Floor, Backsplash, Shower — each with its own sqft, tile, and services. One combined price for the whole job.
             </div>
-            {(!settings.jobTypes || settings.jobTypes.length === 0) ? (
-              <EmptyState msg="No job types yet — add some in ⚙ Settings → Job Types" />
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px,1fr))", gap: 10 }}>
-                {settings.jobTypes.map(jt => (
-                  <button key={jt.id} onClick={() => selectJobType(jt)} style={{
-                    background: selectedJobTypeId === jt.id ? "#c19748" : "#1c1812",
-                    border: `1px solid ${selectedJobTypeId === jt.id ? "#c19748" : "#2e2518"}`,
-                    borderRadius: 6, padding: "12px 8px", cursor: "pointer",
-                    color: selectedJobTypeId === jt.id ? "#0f0f0f" : "#c8b98a",
-                    textAlign: "center", transition: "all 0.18s",
-                  }}>
-                    <div style={{ fontSize: 20, marginBottom: 4 }}>{jt.icon}</div>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, fontFamily: "sans-serif" }}>{jt.name || "Unnamed"}</div>
-                  </button>
-                ))}
+            {areas.map((a, idx) => (
+              <AreaCard
+                key={a.id}
+                index={idx}
+                input={a}
+                computed={computedAreas[idx]}
+                settings={settings}
+                expanded={expandedAreaId === a.id}
+                onToggleExpand={() => setExpandedAreaId(p => p === a.id ? null : a.id)}
+                onUpdate={patch => updateArea(a.id, patch)}
+                onRemove={() => removeArea(a.id)}
+                canRemove={areas.length > 1}
+                onSelectTile={t => selectTile(a.id, t)}
+                onSelectJobType={jt => selectJobType(a.id, jt)}
+                onToggleService={svId => toggleService(a.id, svId)}
+                onSetOverride={(svId, cId, val) => setOverride(a.id, svId, cId, val)}
+                getOverride={(svId, cId, def) => getOverride(a, svId, cId, def)}
+              />
+            ))}
+            <button onClick={addArea} style={{
+              width: "100%", padding: 14, background: "none", border: "1px dashed #c19748",
+              borderRadius: 8, color: "#c19748", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              fontFamily: "sans-serif", marginTop: 4,
+            }}>+ Add Area</button>
+
+            {areas.length > 1 && (
+              <div style={{ marginTop: 16, background: "#161208", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 16px", display: "flex", justifyContent: "space-between", fontFamily: "sans-serif" }}>
+                <span style={{ fontSize: 12, color: "#8a7d65" }}>Combined Area Subtotal ({areas.length} areas)</span>
+                <span style={{ fontSize: 14, color: "#c19748", fontWeight: 700 }}>{fmt(areasSubtotal)}</span>
               </div>
             )}
           </Section>
 
-          {/* 02 */}
-          <Section label="02" title="Square Footage">
-            <input type="number" placeholder="e.g. 350" value={sqft} onChange={e => setSqft(e.target.value)} style={inputStyle} />
-            <div style={{ fontSize: 12, color: "#6b5f4a", marginTop: 8 }}>Enter the total area in square feet</div>
-            <div style={{ marginTop: 14 }}>
-              <div style={{ ...fieldLabelStyle, marginBottom: 5 }}>Linear Feet (optional)</div>
-              <input type="number" placeholder="e.g. 60" value={linearFt} onChange={e => setLinearFt(e.target.value)} style={inputStyle} />
-              <div style={{ fontSize: 12, color: "#6b5f4a", marginTop: 8 }}>For trim, edge strips, or cove base priced by the linear foot</div>
-            </div>
-          </Section>
-
-          {/* 02 */}
-          <Section label="03" title="Tile Type">
-            {settings.tiles.length === 0 ? <EmptyState msg="No tile types yet — add some in ⚙ Settings → Tile Types" /> : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px,1fr))", gap: 10 }}>
-                {settings.tiles.map(t => (
-                  <button key={t.id} onClick={() => selectTile(t)} style={{
-                    background: selectedTileId === t.id ? "#c19748" : "#1c1812",
-                    border: `1px solid ${selectedTileId === t.id ? "#c19748" : "#2e2518"}`,
-                    borderRadius: 6, padding: "14px 10px", cursor: "pointer",
-                    color: selectedTileId === t.id ? "#0f0f0f" : "#c8b98a",
-                    textAlign: "center", transition: "all 0.18s",
-                  }}>
-                    <div style={{ fontSize: 22, marginBottom: 6 }}>{t.icon}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "sans-serif" }}>{t.name || "Unnamed"}</div>
-                    <div style={{ fontSize: 11, marginTop: 4, opacity: 0.75, fontFamily: "sans-serif" }}>Labor: ${nv(t.labor)}/sqft</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {tile && (
-              <>
-                <div style={{ marginTop: 12, background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 16px", display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
-                  <InfoPill label="Labor Rate"    value={`$${nv(tile.labor)}/sqft`} />
-                  <InfoPill label="Sqft to Order" value={area > 0 ? `${tileWithWaste.toFixed(0)} sqft` : "—"} gold />
-                  {tile.notes && <div style={{ fontSize: 11, color: "#5a4f38", fontStyle: "italic", fontFamily: "sans-serif", marginLeft: "auto" }}>{tile.notes}</div>}
-                </div>
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
-                    <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Tile Cost $/sqft</div>
-                    <input type="number" placeholder="0.00" value={tilePriceSqFt} onChange={e => setTilePriceSqFt(e.target.value)} style={inputStyle} min="0" />
-                    <div style={{ fontSize: 10, color: "#4a4030", marginTop: 5, fontFamily: "sans-serif" }}>Enter 0 or leave blank if not yet purchased</div>
-                  </div>
-                  <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
-                    <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Waste %</div>
-                    <input type="number" placeholder="10" value={wastePercent} onChange={e => setWastePercent(e.target.value)} style={inputStyle} min="0" />
-                    <div style={{ fontSize: 10, color: "#4a4030", marginTop: 5, fontFamily: "sans-serif" }}>
-                      {area > 0 ? `Order ${tileWithWaste.toFixed(0)} sqft (${area} + ${(tileWithWaste - area).toFixed(0)} waste)` : "Sqft to order shown once area is entered"}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-            {(() => {
-              const thinsetOptions = settings.consumables.filter(c => c.role === "thinset");
-              const groutOptions   = settings.consumables.filter(c => c.role === "grout");
-              if (thinsetOptions.length === 0 && groutOptions.length === 0) return null;
-              return (
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  {thinsetOptions.length > 0 && (
-                    <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
-                      <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Thinset</div>
-                      <select
-                        value={selectedThinsetId || thinsetOptions[0].id}
-                        onChange={e => setSelectedThinsetId(e.target.value)}
-                        style={{ ...inputStyle, cursor: "pointer" }}
-                      >
-                        {thinsetOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {groutOptions.length > 0 && (
-                    <div style={{ background: "#161208", border: "1px solid #2e2518", borderRadius: 6, padding: "12px 14px" }}>
-                      <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Grout</div>
-                      <select
-                        value={selectedGroutId || groutOptions[0].id}
-                        onChange={e => setSelectedGroutId(e.target.value)}
-                        style={{ ...inputStyle, cursor: "pointer" }}
-                      >
-                        {groutOptions.map(c => <option key={c.id} value={c.id}>{c.name || "Unnamed"} — {materialPriceLine(c)}</option>)}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </Section>
-
-          {/* 03 */}
-          <Section label="04" title="Additional Services">
-            {settings.services.length === 0 ? <EmptyState msg="No services yet — add some in ⚙ Settings → Services" /> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {settings.services.map(sv => {
-                  const isOn   = !!serviceState[sv.id]?.enabled;
-                  const svCost = getServiceCost(sv);
-                  const assignedConsumables = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
-                  return (
-                    <div key={sv.id} style={{ background: isOn ? "#1a1710" : "#141210", border: `1px solid ${isOn ? "#c19748" : "#2a2218"}`, borderRadius: 8, overflow: "hidden", transition: "all 0.15s" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer" }} onClick={() => toggleService(sv.id)}>
-                        <Checkbox checked={isOn} onChange={() => toggleService(sv.id)} onClick={e => e.stopPropagation()} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 14, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{sv.name || "Unnamed"}</div>
-                          <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>
-                            Labor ${nv(sv.laborPerSqFt)}/sqft · {assignedConsumables.length} material{assignedConsumables.length !== 1 ? "s" : ""}
-                            {isOn && area > 0 && <span style={{ color: "#c19748", marginLeft: 10 }}>{fmt(svCost)} total</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      {isOn && (
-                        <div style={{ borderTop: "1px solid #2a2518", padding: "12px 14px 14px" }}>
-                          <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 10, fontStyle: "italic" }}>
-                            Override any cost for this job — leave as-is to use your defaults
-                          </div>
-
-                          {/* Labor row */}
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                            <div style={{ fontSize: 13, color: "#c8b98a", fontFamily: "sans-serif" }}>Labor</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ color: "#5a4f38", fontSize: 12 }}>$</span>
-                              <input type="number" value={getOverride(sv.id, "__labor__", sv.laborPerSqFt)}
-                                onChange={e => setOverride(sv.id, "__labor__", e.target.value)}
-                                style={{ ...iStyle, flex: 1, fontSize: 13 }} />
-                            </div>
-                            <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 8px", textAlign: "center" }}>/sqft</div>
-                          </div>
-
-                          {/* Material rows */}
-                          {assignedConsumables.map(c => {
-                            const defaultCost = c.priceType === "bag" ? c.bagPrice : c.unitCost;
-                            const ovVal = getOverride(sv.id, c.id, defaultCost);
-                            const effectiveC = { ...c, bagPrice: ovVal, unitCost: ovVal };
-                            const qty = c.priceType === "flat" ? nv(getOverride(sv.id, "qty__" + c.id, 1), 1) : 1;
-                            const lineTotal = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-                            const basisNote = c.priceType === "bag" && c.coverageBasis === "linear"
-                              ? `${materialUnits(effectiveC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(c), materialUnits(effectiveC, area, linearFeet, wastePct))} · ${linearFeet} ln ft`
-                              : null;
-                            return (
-                              <div key={c.id} style={{ marginBottom: 8 }}>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px", gap: 8, alignItems: "center" }}>
-                                  <div>
-                                    <div style={{ fontSize: 13, color: "#c8b98a", fontFamily: "sans-serif" }}>{c.name}</div>
-                                    {area > 0 && <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{fmt(lineTotal)} total{basisNote ? ` · ${basisNote}` : ""}</div>}
-                                  </div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <span style={{ color: "#5a4f38", fontSize: 12 }}>$</span>
-                                    <input type="number" value={ovVal} onChange={e => setOverride(sv.id, c.id, e.target.value)}
-                                      style={{ ...iStyle, flex: 1, fontSize: 13 }} />
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", background: "#0f0d0a", border: "1px solid #2a2010", borderRadius: 4, padding: "5px 8px", textAlign: "center" }}>
-                                    {c.priceType === "bag" ? `$/${unitLabelOf(c)}` : c.priceType === "sqft" ? "/sqft" : "flat"}
-                                  </div>
-                                </div>
-                                {c.priceType === "flat" && (
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                                    <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>Quantity</span>
-                                    <input type="number" min="0" value={qty}
-                                      onChange={e => setOverride(sv.id, "qty__" + c.id, e.target.value)}
-                                      style={{ ...iStyle, width: 60, fontSize: 12, padding: "4px 8px" }} />
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-
-                          {area > 0 && (
-                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #2a2010", display: "flex", justifyContent: "space-between", fontFamily: "sans-serif" }}>
-                              <span style={{ fontSize: 12, color: "#5a4f38" }}>Service total</span>
-                              <span style={{ fontSize: 14, color: "#e8c870" }}>{fmt(svCost)}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
 
           {/* 04 — Job Notes */}
-          <Section label="05" title="Job Notes">
+          <Section label="02" title="Job Notes">
             <textarea
               placeholder="Scope details, customer requests, site conditions, special instructions…"
               value={jobNotes}
@@ -3677,7 +3759,7 @@ export default function TileEstimator() {
           </Section>
 
           {/* 05 */}
-          <Section label="06" title="Customer Pricing">
+          <Section label="03" title="Customer Pricing">
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {[["percent","% Markup"],["manual","Set Manual Price"]].map(([mode, label]) => (
                 <button key={mode} onClick={() => setMarkupMode(mode)} style={{
@@ -3712,7 +3794,11 @@ export default function TileEstimator() {
 
           {calcNudge && (
             <div style={{ background: "#1e1408", border: "1px solid #c19748", borderRadius: 6, padding: "10px 14px", marginBottom: 10, fontFamily: "sans-serif", fontSize: 13, color: "#c19748" }}>
-              {!area && !tile ? "⚠ Enter square footage and select a tile type to calculate." : !area ? "⚠ Enter the square footage to calculate." : "⚠ Select a tile type to calculate."}
+              {areas.some(a => !nv(a.sqft)) && areas.some(a => !a.tileId)
+                ? "⚠ Every area needs a square footage and a tile type to calculate."
+                : areas.some(a => !nv(a.sqft))
+                ? "⚠ Enter the square footage for every area to calculate."
+                : "⚠ Select a tile type for every area to calculate."}
             </div>
           )}
           <button onClick={handleCalculate} style={{
@@ -3735,24 +3821,38 @@ export default function TileEstimator() {
                   <div style={{ fontSize: 22, fontWeight: 400, marginTop: 4 }}>True Job Cost</div>
                 </div>
                 <div style={{ padding: "8px 0" }}>
-                  {tileCostPerSqFt > 0
-                    ? <LineItem label={`Tile — ${tile.name} (${tileWithWaste.toFixed(0)} sqft w/ ${(wastePct*100).toFixed(0)}% waste @ $${tileCostPerSqFt}/sqft)`} value={tileCost} />
-                    : <LineItem label={`Tile — ${tile.name} (not included)`} value={0} dim />
-                  }
-                  <LineItem label={`Labor — ${tile.name} (${area} sqft × $${laborRate}/sqft)`} value={laborCost} />
-                  {thinsetC && <LineItem label={`Thinset (${materialUnits(thinsetC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(thinsetC), materialUnits(thinsetC, area, linearFeet, wastePct))} × $${nv(thinsetC.bagPrice)})`} value={thinsetCost} />}
-                  {groutC   && <LineItem label={`Grout (${materialUnits(groutC, area, linearFeet, wastePct)} ${pluralUnit(unitLabelOf(groutC), materialUnits(groutC, area, linearFeet, wastePct))} × $${nv(groutC.bagPrice)})`}     value={groutCost} />}
-                  {enabledServices.map(sv => {
-                    const assignedC = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
-                    const laborOv = parseFloat(getOverride(sv.id, "__labor__", sv.laborPerSqFt)) || 0;
+                  {computedAreas.map((ca, idx) => {
+                    const { input, tile, area: caArea, linearFeet: caLinearFeet, wastePct: caWastePct, tileWithWaste: caTileWithWaste,
+                      tileCostPerSqFt: caTileCostPerSqFt, tileCost: caTileCost, laborRate: caLaborRate, laborCost: caLaborCost,
+                      thinsetC: caThinsetC, groutC: caGroutC, thinsetCost: caThinsetCost, groutCost: caGroutCost, enabledServices: caServices } = ca;
                     return (
-                      <div key={sv.id}>
-                        <LineItem label={sv.name} value={getServiceCost(sv)} section />
-                        <LineItem label={`  ↳ Labor ($${laborOv}/sqft)`} value={laborOv * area} indent />
-                        {assignedC.map(c => {
-                          const ov = getOverride(sv.id, c.id, c.priceType === "bag" ? c.bagPrice : c.unitCost);
-                          const effC = { ...c, bagPrice: ov, unitCost: ov };
-                          return <LineItem key={c.id} label={`  ↳ ${c.name}`} value={consumableCost(effC, area)} indent />;
+                      <div key={input.id}>
+                        {areas.length > 1 && (
+                          <div style={{ padding: "10px 24px 4px", fontSize: 12, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                            {tile?.name ? tile.name : `Area ${idx + 1}`} — {caArea} sqft
+                          </div>
+                        )}
+                        {caTileCostPerSqFt > 0
+                          ? <LineItem label={`Tile — ${tile.name} (${caTileWithWaste.toFixed(0)} sqft w/ ${(caWastePct*100).toFixed(0)}% waste @ $${caTileCostPerSqFt}/sqft)`} value={caTileCost} />
+                          : <LineItem label={`Tile — ${tile?.name || "—"} (not included)`} value={0} dim />
+                        }
+                        <LineItem label={`Labor — ${tile?.name || "—"} (${caArea} sqft × $${caLaborRate}/sqft)`} value={caLaborCost} />
+                        {caThinsetC && <LineItem label={`Thinset (${materialUnits(caThinsetC, caArea, caLinearFeet, caWastePct)} ${pluralUnit(unitLabelOf(caThinsetC), materialUnits(caThinsetC, caArea, caLinearFeet, caWastePct))} × $${nv(caThinsetC.bagPrice)})`} value={caThinsetCost} />}
+                        {caGroutC   && <LineItem label={`Grout (${materialUnits(caGroutC, caArea, caLinearFeet, caWastePct)} ${pluralUnit(unitLabelOf(caGroutC), materialUnits(caGroutC, caArea, caLinearFeet, caWastePct))} × $${nv(caGroutC.bagPrice)})`}     value={caGroutCost} />}
+                        {caServices.map(sv => {
+                          const assignedC = sv.consumableIds.map(cId => settings.consumables.find(c => c.id === cId)).filter(Boolean);
+                          const laborOv = parseFloat(getOverride(input, sv.id, "__labor__", sv.laborPerSqFt)) || 0;
+                          return (
+                            <div key={sv.id}>
+                              <LineItem label={sv.name} value={ca.getServiceCost(sv)} section />
+                              <LineItem label={`  ↳ Labor ($${laborOv}/sqft)`} value={laborOv * caArea} indent />
+                              {assignedC.map(c => {
+                                const ov = getOverride(input, sv.id, c.id, c.priceType === "bag" ? c.bagPrice : c.unitCost);
+                                const effC = { ...c, bagPrice: ov, unitCost: ov };
+                                return <LineItem key={c.id} label={`  ↳ ${c.name}`} value={consumableCost(effC, caArea)} indent />;
+                              })}
+                            </div>
+                          );
                         })}
                       </div>
                     );
@@ -3764,7 +3864,7 @@ export default function TileEstimator() {
                   <span style={{ fontSize: 28, color: "#e8c870", fontWeight: 400 }}>{fmt(trueCost)}</span>
                 </div>
                 <div style={{ padding: "8px 24px 16px", color: "#5a4f38", fontSize: 12, fontFamily: "sans-serif", fontStyle: "italic" }}>
-                  Cost per sqft: {fmt(trueCost / area)} · Tile to order: {tileWithWaste.toFixed(0)} sqft
+                  Cost per sqft: {fmt(trueCost / totalSqft)} · Tile to order: {computedAreas.reduce((s, ca) => s + ca.tileWithWaste, 0).toFixed(0)} sqft
                 </div>
               </div>
 
@@ -3779,9 +3879,9 @@ export default function TileEstimator() {
                   <StatBox label="Margin"         value={`${Math.max(0, margin).toFixed(1)}%`} color={margin >= 25 ? "#6dc47a" : margin >= 10 ? "#e8c870" : "#e05c5c"} />
                 </div>
                 <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <MiniStat label="Price per sqft"     value={fmt(customerPrice / area)} />
-                  <MiniStat label="True cost per sqft" value={fmt(trueCost / area)} />
-                  <MiniStat label="Tile to order"      value={`${tileWithWaste.toFixed(0)} sqft`} />
+                  <MiniStat label="Price per sqft"     value={fmt(customerPrice / totalSqft)} />
+                  <MiniStat label="True cost per sqft" value={fmt(trueCost / totalSqft)} />
+                  <MiniStat label="Tile to order"      value={`${computedAreas.reduce((s, ca) => s + ca.tileWithWaste, 0).toFixed(0)} sqft`} />
                   <MiniStat label="Markup applied"     value={markupMode === "percent" ? `${markupPercent}%` : "Manual"} />
                 </div>
                 {profit < 0 && (
@@ -3791,18 +3891,10 @@ export default function TileEstimator() {
                 )}
               </div>
 
+
               <SendEstimateButtons
                 settings={settings}
-                area={area}
-                linearFeet={linearFeet}
-                wastePct={wastePct}
-                tile={tile}
-                tileWithWaste={tileWithWaste}
-                tilePriceSqFt={tilePriceSqFt}
-                thinsetId={selectedThinsetId}
-                groutId={selectedGroutId}
-                enabledServices={enabledServices}
-                serviceState={serviceState}
+                areas={areas}
                 trueCost={trueCost}
                 customerPrice={customerPrice}
                 profit={profit}
@@ -3890,10 +3982,9 @@ export default function TileEstimator() {
 
 
 // ─── Send Estimate ───────────────────────────────────────────
-function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileWithWaste, tilePriceSqFt,
-  enabledServices, serviceState, trueCost, customerPrice, profit, margin,
+function SendEstimateButtons({ settings, areas, trueCost, customerPrice, profit, margin,
   markupMode, markupPercent, jobNotes, customerName, customerEmail, customerPhone,
-  projectDesc, thinsetId, groutId, onEstimateSent }) {
+  projectDesc, onEstimateSent }) {
 
   const [showPreview, setShowPreview]     = useState(false);
   const [sendMode, setSendMode]           = useState(null);
@@ -3907,33 +3998,20 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
   const estNum  = String(settings.estimateNumber || 1).padStart(4, "0");
   const nextNum = String((settings.estimateNumber || 1) + 1).padStart(4, "0");
   const today   = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const svList  = enabledServices || [];
 
-  function getServiceTotal(sv) {
-    const st = serviceState[sv.id] || {};
-    const labor = area * (parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0);
-    const mats  = (sv.consumableIds || []).reduce((sum, cId) => {
-      const cons = (settings.consumables || []).find(x => x.id === cId);
-      if (!cons) return sum;
-      const override = st.overrides?.[cId];
-      const effectiveC = override !== undefined ? { ...cons, bagPrice: override, unitCost: override } : cons;
-      const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-      return sum + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-    }, 0);
-    return labor + mats;
-  }
+  const computed = areas.map(a => ({ input: a, ...computeAreaCost(a, settings) }));
+  const totalSqft = areas.reduce((s, a) => s + nv(a.sqft), 0);
+  const multiArea = computed.length > 1;
+  const allServiceNames = [...new Set(computed.flatMap(ca => ca.enabledServices.map(sv => sv.name)))];
+  const knownCost = computed.reduce((s, ca) => s + ca.subtotal, 0);
+  const miscCost = trueCost - knownCost;
+  const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
+  const mp = cost => fmt(cost * ratio);
+  const firstName = customerName ? customerName.split(" ")[0] : "";
 
+  // ── Itemized style: full line-by-line breakdown, one block per area ──
   function buildEmailBody() {
-    const allCons = settings.consumables || [];
-    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-    const mp = cost => fmt(cost * ratio);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
-    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
-    const firstName = customerName ? customerName.split(" ")[0] : "";
     const L = [];
-
-    // ── Warm opener ──
     if (c.companyName || c.contactName) {
       L.push(c.companyName || c.contactName);
       if (c.companyName && c.contactName) L.push(c.contactName);
@@ -3945,11 +4023,7 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     L.push(today);
     L.push("Estimate #" + estNum);
     L.push("");
-    if (firstName) {
-      L.push("Hi " + firstName + ",");
-    } else {
-      L.push("Hello,");
-    }
+    L.push(firstName ? "Hi " + firstName + "," : "Hello,");
     L.push("");
     if (projectDesc) {
       L.push("Thank you for the opportunity to quote your " + projectDesc + " project. I’ve put together a detailed estimate below and would love to get started!");
@@ -3958,82 +4032,63 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     }
     L.push("");
 
-    // ── Job details ──
     L.push("PROJECT DETAILS");
     L.push("─────────────────────────────────────");
-    L.push("  Area:      " + area + " square feet");
-    if (tile) L.push("  Tile Type: " + tile.name);
-    if (!tileSupplied) L.push("  Material:  " + tileWithWaste.toFixed(0) + " sqft to order (includes waste allowance)");
-    if (svList.length > 0) {
-      L.push("  Includes:  " + svList.map(sv => sv.name).join(", "));
-    }
+    L.push("  Total Area: " + totalSqft + " square feet" + (multiArea ? " across " + computed.length + " areas" : ""));
+    if (allServiceNames.length > 0) L.push("  Includes:  " + allServiceNames.join(", "));
     if (jobNotes && jobNotes.trim()) {
       L.push("");
       L.push("  Notes: " + jobNotes.trim().replace(/\n/g, "  "));
     }
     L.push("");
 
-    // ── Itemized breakdown ──
     L.push("WHAT’S INCLUDED");
     L.push("─────────────────────────────────────");
-
-    if (!tileSupplied) {
-      const mc = tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-      L.push("  " + tile?.name + " tile (" + tileWithWaste.toFixed(0) + " sqft)   " + mp(mc));
-    } else {
-      L.push("  Tile material — customer supplied");
-    }
-    if (tile) {
-      L.push("  " + tile.name + " installation   " + mp(area * (parseFloat(tile.labor) || 0)));
-    }
-    if (thinsetC) {
-      const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
-      if (cost > 0) L.push("  Thinset & mortar   " + mp(cost));
-    }
-    if (groutC) {
-      const cost = consumableCost(groutC, area, linearFeet, wastePct);
-      if (cost > 0) L.push("  Grout   " + mp(cost));
-    }
-    svList.forEach(sv => {
-      const st = serviceState[sv.id] || {};
-      const laborOv = parseFloat(st.overrides?.__labor__ ?? sv.laborPerSqFt) || 0;
-      L.push("");
-      L.push("  " + sv.name + "   " + mp(getServiceTotal(sv)));
-      (sv.consumableIds || []).forEach(cId => {
-        const cons = allCons.find(x => x.id === cId);
-        if (!cons) return;
-        const ovVal = st.overrides?.[cId];
-        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
-        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-        const lineCost = consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-        if (lineCost > 0) L.push("    • " + cons.name);
+    computed.forEach((ca, idx) => {
+      const { tile, area, tileWithWaste, tileCostPerSqFt, tileCost, laborCost, thinsetC, groutC, thinsetCost, groutCost, enabledServices, input } = ca;
+      const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
+      if (multiArea) {
+        L.push("");
+        L.push("  " + (tile?.name ? tile.name + " — " : "") + "Area " + (idx + 1) + " (" + area + " sqft)");
+      }
+      if (!tileSupplied) {
+        L.push("  " + (tile?.name || "Tile") + " (" + tileWithWaste.toFixed(0) + " sqft)   " + mp(tileCost));
+      } else {
+        L.push("  Tile material — customer supplied");
+      }
+      if (tile) L.push("  " + tile.name + " installation   " + mp(laborCost));
+      if (thinsetC && thinsetCost > 0) L.push("  " + thinsetC.name + "   " + mp(thinsetCost));
+      if (groutC && groutCost > 0) L.push("  " + groutC.name + "   " + mp(groutCost));
+      enabledServices.forEach(sv => {
+        const st = input.serviceState[sv.id] || {};
+        L.push("");
+        L.push("  " + sv.name + "   " + mp(ca.getServiceCost(sv)));
+        (sv.consumableIds || []).forEach(cId => {
+          const cons = settings.consumables.find(x => x.id === cId);
+          if (!cons) return;
+          const ovVal = st.overrides?.[cId];
+          const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
+          const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
+          const lineCost = consumableCost(effectiveC, area, ca.linearFeet, ca.wastePct, qty);
+          if (lineCost > 0) L.push("    • " + cons.name);
+        });
       });
     });
-    const knownCost =
-      (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
-      (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
-      (thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0) +
-      (groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0) +
-      svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
-    const misc = trueCost - knownCost;
-    if (misc > 0.01) L.push("  Supplies & sundries   " + mp(misc));
+    if (miscCost > 0.01) { L.push(""); L.push("  Supplies & sundries   " + mp(miscCost)); }
 
-    // ── Total ──
     L.push("");
     L.push("─────────────────────────────────────");
     L.push("  TOTAL:          " + fmt(customerPrice));
-    L.push("  Price per sqft: " + fmt(customerPrice / (area || 1)));
+    L.push("  Price per sqft: " + fmt(customerPrice / (totalSqft || 1)));
     L.push("─────────────────────────────────────");
     L.push("");
 
-    // ── Terms ──
     if (terms.trim()) {
       L.push("TERMS");
       terms.trim().split("\n").forEach(t => L.push("  " + t));
       L.push("");
     }
 
-    // ── Warm close ──
     L.push("I’m confident in the quality of my work and stand behind every job I do. If you have any questions or’d like to discuss anything, don’t hesitate to give me a call — I’m happy to walk you through it.");
     L.push("");
     L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
@@ -4044,16 +4099,9 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     if (c.email)       L.push(c.email);
     return L.join("\n");
   }
-  function buildSMSBody() {
-    const allCons = settings.consumables || [];
-    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-    const mp = cost => fmt(cost * ratio);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
-    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
-    const firstName = customerName ? customerName.split(" ")[0] : "";
-    const L = [];
 
+  function buildSMSBody() {
+    const L = [];
     if (c.companyName) L.push(c.companyName);
     L.push("Estimate #" + estNum + " — " + today);
     L.push("");
@@ -4063,31 +4111,23 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
       L.push(projectDesc ? "Estimate for " + projectDesc + ":" : "Tile installation estimate:");
     }
     L.push("");
-    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
-    if (svList.length > 0) L.push("Includes: " + svList.map(sv => sv.name).join(", "));
+    L.push(totalSqft + " sqft" + (multiArea ? " across " + computed.length + " areas" : " — " + (computed[0]?.tile?.name || "Tile") + " installation"));
+    if (allServiceNames.length > 0) L.push("Includes: " + allServiceNames.join(", "));
     L.push("");
 
-    if (!tileSupplied) L.push("Tile material        " + mp(tileWithWaste * (parseFloat(tilePriceSqFt) || 0)));
-    if (tile)          L.push("Installation         " + mp(area * (parseFloat(tile.labor) || 0)));
-    if (thinsetC) {
-      const cost = consumableCost(thinsetC, area, linearFeet, wastePct);
-      if (cost > 0) L.push("Thinset & mortar     " + mp(cost));
-    }
-    if (groutC) {
-      const cost = consumableCost(groutC, area, linearFeet, wastePct);
-      if (cost > 0) L.push("Grout                " + mp(cost));
-    }
-    svList.forEach(sv => L.push(sv.name + "   " + mp(getServiceTotal(sv))));
-    const knownCost =
-      (tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0)) +
-      (tile ? area * (parseFloat(tile.labor) || 0) : 0) +
-      (thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0) +
-      (groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0) +
-      svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
-    const misc = trueCost - knownCost;
-    if (misc > 0.01) L.push("Supplies             " + mp(misc));
+    computed.forEach((ca, idx) => {
+      const { tile, area, tileWithWaste, tileCostPerSqFt, tileCost, laborCost, thinsetC, groutC, thinsetCost, groutCost, enabledServices } = ca;
+      const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
+      if (multiArea) L.push((tile?.name || "Area " + (idx + 1)) + " (" + area + " sqft):");
+      if (!tileSupplied) L.push("Tile material        " + mp(tileCost));
+      if (tile)          L.push("Installation         " + mp(laborCost));
+      if (thinsetC && thinsetCost > 0) L.push(thinsetC.name + "     " + mp(thinsetCost));
+      if (groutC && groutCost > 0) L.push(groutC.name + "                " + mp(groutCost));
+      enabledServices.forEach(sv => L.push(sv.name + "   " + mp(ca.getServiceCost(sv))));
+    });
+    if (miscCost > 0.01) L.push("Supplies             " + mp(miscCost));
     L.push("─────────────────────");
-    L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
+    L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (totalSqft || 1)) + "/sqft)");
     if (jobNotes && jobNotes.trim()) {
       L.push("");
       L.push("Note: " + jobNotes.trim().replace(/\n/g, " "));
@@ -4101,40 +4141,10 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
     return L.join("\n");
   }
+
+  // ── Basic style: one summary line per area (Materials/Labor/Services), then one combined total ──
   function buildBasicEmailBody() {
-    const allCons = settings.consumables || [];
-    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-    const mp = cost => fmt(cost * ratio);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
-    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
-    const firstName = customerName ? customerName.split(" ")[0] : "";
-
-    const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-    const thinMat  = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
-    const groutMat = groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
-    const svMatCost = svList.reduce((sum, sv) => {
-      const st = serviceState[sv.id] || {};
-      return sum + (sv.consumableIds || []).reduce((s2, cId) => {
-        const cons = allCons.find(x => x.id === cId);
-        if (!cons) return s2;
-        const ovVal = st.overrides?.[cId];
-        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
-        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-        return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-      }, 0);
-    }, 0);
-    const miscCost = trueCost - (
-      tileMat + (tile ? area * (parseFloat(tile.labor) || 0) : 0) + thinMat + groutMat +
-      svList.reduce((s, sv) => s + getServiceTotal(sv), 0)
-    );
-    const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
-    const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
-    const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
-
     const L = [];
-
-    // Header
     if (c.companyName || c.contactName) {
       L.push(c.companyName || c.contactName);
       if (c.companyName && c.contactName) L.push(c.contactName);
@@ -4146,8 +4156,6 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     L.push(today);
     L.push("Estimate #" + estNum);
     L.push("");
-
-    // Warm opener
     L.push(firstName ? "Hi " + firstName + "," : "Hello,");
     L.push("");
     if (projectDesc) {
@@ -4157,27 +4165,27 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
     }
     L.push("");
 
-    // Job snapshot
     L.push("Here’s a quick overview:");
-    L.push("  " + area + " square feet — " + (tile?.name || "tile") + " installation");
-    if (!tileSupplied) L.push("  " + tileWithWaste.toFixed(0) + " sqft of material to order (waste included)");
-    if (svList.length > 0) L.push("  Additional work: " + svList.map(sv => sv.name).join(", "));
+    L.push("  " + totalSqft + " square feet" + (multiArea ? " across " + computed.length + " areas" : " — " + (computed[0]?.tile?.name || "tile") + " installation"));
+    if (allServiceNames.length > 0) L.push("  Additional work: " + allServiceNames.join(", "));
     if (jobNotes && jobNotes.trim()) L.push("  " + jobNotes.trim().replace(/\n/g, "  "));
     L.push("");
 
-    // Clean summary
     L.push("ESTIMATE SUMMARY");
     L.push("─────────────────────────────────────");
-    if (tileSupplied) {
-      L.push("  Tile material        Customer supplied");
-    } else {
-      L.push("  Materials            " + mp(totalMatCost));
-    }
-    L.push("  Labor                " + mp(totalLaborCost));
-    if (svList.length > 0) L.push("  Additional services  " + mp(totalServicesCost));
+    computed.forEach((ca, idx) => {
+      const { tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
+      const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
+      const matCost = (tileSupplied ? 0 : tileCost) + thinsetCost + groutCost;
+      const label = multiArea ? (tile?.name ? tile.name : "Area " + (idx + 1)) + " (" + area + " sqft)" : "Materials";
+      L.push("  " + label);
+      L.push("    Materials  " + (tileSupplied && matCost === 0 ? "Customer supplied" : mp(matCost)));
+      L.push("    Labor      " + mp(laborCost));
+      if (servicesCost > 0) L.push("    Services   " + mp(servicesCost));
+    });
     L.push("─────────────────────────────────────");
     L.push("  TOTAL                " + fmt(customerPrice));
-    L.push("  Per square foot      " + fmt(customerPrice / (area || 1)));
+    L.push("  Per square foot      " + fmt(customerPrice / (totalSqft || 1)));
     L.push("─────────────────────────────────────");
     L.push("");
 
@@ -4187,7 +4195,6 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
       L.push("");
     }
 
-    // Warm close
     L.push("I take pride in delivering clean, quality work on every job. If you have any questions or want to talk through the details, give me a call — I’m always happy to chat.");
     L.push("");
     L.push("Looking forward to working with you" + (firstName ? ", " + firstName : "") + "!");
@@ -4200,36 +4207,7 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
   }
 
   function buildBasicSMSBody() {
-    const allCons = settings.consumables || [];
-    const ratio = trueCost > 0 ? customerPrice / trueCost : 1;
-    const mp = cost => fmt(cost * ratio);
-    const tileSupplied = !tilePriceSqFt || parseFloat(tilePriceSqFt) === 0;
-    const thinsetC = pickConsumableByRole(allCons, "thinset", thinsetId);
-    const groutC   = pickConsumableByRole(allCons, "grout", groutId);
-    const firstName = customerName ? customerName.split(" ")[0] : "";
-    const tileMat  = tileSupplied ? 0 : tileWithWaste * (parseFloat(tilePriceSqFt) || 0);
-    const thinMat  = thinsetC ? consumableCost(thinsetC, area, linearFeet, wastePct) : 0;
-    const groutMat = groutC   ? consumableCost(groutC, area, linearFeet, wastePct) : 0;
-    const svMatCost = svList.reduce((sum, sv) => {
-      const st = serviceState[sv.id] || {};
-      return sum + (sv.consumableIds || []).reduce((s2, cId) => {
-        const cons = allCons.find(x => x.id === cId);
-        if (!cons) return s2;
-        const ovVal = st.overrides?.[cId];
-        const effectiveC = ovVal !== undefined ? { ...cons, bagPrice: ovVal, unitCost: ovVal } : cons;
-        const qty = cons.priceType === "flat" ? nv(st.overrides?.["qty__" + cId], 1) : 1;
-        return s2 + consumableCost(effectiveC, area, linearFeet, wastePct, qty);
-      }, 0);
-    }, 0);
-    const miscCost = trueCost - (
-      tileMat + (tile ? area * (parseFloat(tile.labor) || 0) : 0) + thinMat + groutMat +
-      svList.reduce((s, sv) => s + getServiceTotal(sv), 0)
-    );
-    const totalMatCost = tileMat + thinMat + groutMat + svMatCost + (miscCost > 0.01 ? miscCost : 0);
-    const totalLaborCost = tile ? area * (parseFloat(tile.labor) || 0) : 0;
-    const totalServicesCost = svList.reduce((s, sv) => s + getServiceTotal(sv), 0);
     const L = [];
-
     if (c.companyName) L.push(c.companyName);
     L.push("Estimate #" + estNum + " — " + today);
     L.push("");
@@ -4239,20 +4217,21 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
       L.push(projectDesc ? "Estimate for " + projectDesc + ":" : "Tile installation estimate:");
     }
     L.push("");
-    L.push(area + " sqft — " + (tile?.name || "Tile") + " installation");
-    if (svList.length > 0) L.push("Includes: " + svList.map(sv => sv.name).join(", "));
+    L.push(totalSqft + " sqft" + (multiArea ? " across " + computed.length + " areas" : " — " + (computed[0]?.tile?.name || "Tile") + " installation"));
+    if (allServiceNames.length > 0) L.push("Includes: " + allServiceNames.join(", "));
     if (jobNotes && jobNotes.trim()) L.push("Note: " + jobNotes.trim().replace(/\n/g, " "));
     L.push("");
-    if (tileSupplied) {
-      L.push("Materials       Customer supplied");
-    } else {
-      L.push("Materials       " + mp(totalMatCost));
-    }
-    L.push("Labor           " + mp(totalLaborCost));
-    if (svList.length > 0) L.push("Services        " + mp(totalServicesCost));
+    computed.forEach((ca, idx) => {
+      const { tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
+      const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
+      const matCost = (tileSupplied ? 0 : tileCost) + thinsetCost + groutCost;
+      if (multiArea) L.push((tile?.name || "Area " + (idx + 1)) + " (" + area + " sqft)");
+      L.push("Materials       " + (tileSupplied && matCost === 0 ? "Customer supplied" : mp(matCost)));
+      L.push("Labor           " + mp(laborCost));
+      if (servicesCost > 0) L.push("Services        " + mp(servicesCost));
+    });
     L.push("─────────────────────");
-    L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (area || 1)) + "/sqft)");
-
+    L.push("TOTAL: " + fmt(customerPrice) + " (" + fmt(customerPrice / (totalSqft || 1)) + "/sqft)");
     if (terms.trim()) {
       L.push("");
       L.push("Terms: " + terms.trim().split("\n")[0] + (terms.trim().split("\n").length > 1 ? " (...)" : ""));
@@ -4320,7 +4299,6 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
         </div>
       </div>
 
-      {/* Itemized / Basic toggle */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Estimate Style</div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -4338,7 +4316,6 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
         </div>
       </div>
 
-      {/* Customer summary — read only in send panel */}
       {(customerName || projectDesc) && (
         <div style={{ background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 6, padding: "10px 14px", marginBottom: 14 }}>
           {customerName && <div style={{ fontSize: 13, color: "#d4c49a", fontFamily: "sans-serif", fontWeight: 600 }}>{customerName}</div>}
@@ -4383,6 +4360,7 @@ function SendEstimateButtons({ settings, area, linearFeet, wastePct, tile, tileW
   );
 }
 
+
 // ─── Help Page ────────────────────────────────────────────────────────────────
 function HelpPage() {
   const sections = [
@@ -4404,32 +4382,41 @@ function HelpPage() {
       ],
     },
     {
-      title: "Step 1 — Square Footage",
-      icon: "📐",
+      title: "Step 1 — Areas",
+      icon: "🏘️",
       content: [
-        { type: "p", text: "Enter the total area of the job in square feet. This number drives every per-sqft calculation in the estimate." },
-        { type: "h", text: "Tips" },
-        { type: "bullets", items: [
-          "Measure length × width for rectangular rooms",
-          "For L-shaped or irregular spaces, break them into rectangles and add the totals",
-          "Enter the net tile area — waste is added separately in Step 2",
-        ]},
+        { type: "p", text: "A job can be made of one or several Areas — Kitchen Floor, Backsplash, Shower, etc. Each Area has its own Job Type, Square Footage, Tile Type, Thinset/Grout, and Services." },
+        { type: "p", text: "Tap \"+ Add Area\" for jobs with more than one space. There's one combined customer price for the whole job, but the sent estimate and proposal break out each Area separately so the customer sees exactly what's covered where." },
+        { type: "p", text: "Tap an Area's header to expand or collapse it. Remove an Area with the button at the bottom of its card — there's always at least one Area." },
       ],
     },
     {
       title: "Step 2 — Job Type (optional)",
       icon: "🏠",
       content: [
-        { type: "p", text: "Pick a preset like Kitchen Floor, Backsplash, or Shower and it auto-checks the services that job usually needs in Step 4 — nothing you've already checked gets unchecked." },
+        { type: "p", text: "Pick a preset like Kitchen Floor, Backsplash, or Shower and it auto-checks the services that job usually needs further down in that Area — nothing you've already checked gets unchecked." },
         { type: "p", text: "This step is entirely optional. Skip it and pick services yourself if you'd rather — the estimate works exactly the same either way." },
         { type: "p", text: "Manage your own presets in Settings → Job Types." },
       ],
     },
     {
-      title: "Step 3 — Tile Type",
+      title: "Step 3 — Square Footage",
+      icon: "📐",
+      content: [
+        { type: "p", text: "Enter the area of this specific Area in square feet. This number drives every per-sqft calculation for that Area." },
+        { type: "h", text: "Tips" },
+        { type: "bullets", items: [
+          "Measure length × width for rectangular rooms",
+          "For L-shaped or irregular spaces, break them into rectangles and add the totals",
+          "Enter the net tile area — waste is added separately in the Tile Type step",
+        ]},
+      ],
+    },
+    {
+      title: "Step 4 — Tile Type",
       icon: "⬜",
       content: [
-        { type: "p", text: "Select the type of tile being installed. This sets the labor rate for the job." },
+        { type: "p", text: "Select the type of tile being installed in this Area. This sets the labor rate for that Area." },
         { type: "h", text: "Tile Cost Per Sqft" },
         { type: "p", text: "Enter what you paid for the tile per sqft. Leave it at 0 if the customer supplied the tile or it hasn't been purchased yet — it will show as not included in the breakdown." },
         { type: "h", text: "Waste %" },
@@ -4440,11 +4427,11 @@ function HelpPage() {
           "Complex cuts or large format — 15–20%",
         ]},
         { type: "h", text: "Thinset & Grout" },
-        { type: "p", text: "If you've tagged more than one brand in Settings → Consumables & Rates, dropdowns appear here to pick which one to use for this job." },
+        { type: "p", text: "If you've tagged more than one brand in Settings → Consumables & Rates, dropdowns appear here to pick which one to use for this Area." },
       ],
     },
     {
-      title: "Step 4 — Additional Services",
+      title: "Step 5 — Additional Services",
       icon: "🔧",
       content: [
         { type: "p", text: "Check any services that apply to this job. Each service expands to show its labor and materials." },
@@ -4467,7 +4454,7 @@ function HelpPage() {
       ],
     },
     {
-      title: "Step 5 — Customer Pricing",
+      title: "Step 6 — Customer Pricing",
       icon: "💰",
       content: [
         { type: "p", text: "Choose between a percentage markup over your true cost or a manual flat price." },
@@ -4609,6 +4596,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.11.0 — Estimates can now be made up of multiple Areas (Kitchen Floor, Backsplash, Shower, etc.) in one job — each with its own square footage, tile, thinset/grout, and services. One combined customer price for the whole job, with the sent estimate and proposal itemizing each area separately",
           "v1.10.0 — New Job Type presets (Kitchen Floor, Backsplash, Shower, and any you add) — pick one on the estimator and it auto-checks the services that job usually needs, without unchecking anything you already picked. Materials can now be tagged as Thinset or Grout, so you can stock multiple brands and choose which one to use per job instead of always using a single fixed material — your pick is remembered on saved estimates and drafts",
           "v1.9.0 — Materials can now use a custom waste % instead of the job default; Tile Types can be assigned Required Services that auto-enable when you pick that tile on the estimator; sent estimates now save true cost, profit $, and margin % (shown as a breakdown in History); new Accounting tab with Day/Week/Month/Quarter/Year views showing net profit, total charged, total expense, average margin, a profit chart, and a searchable job list per period",
           "v1.8.0 — New Shopping List: generate a materials buy-list from any sent estimate or draft, with the tile itself, thinset/grout, and every assigned service material auto-quantified; check items off as you buy them, add custom items, and export a text list to take to the supplier. Also added Job Status for sent estimates (Awaiting Approval / Approved / Complete / Declined, set manually) and Materials Status (Need to Buy / All Purchased, tracked automatically from your shopping list checkboxes) — both shown as badges in History",
