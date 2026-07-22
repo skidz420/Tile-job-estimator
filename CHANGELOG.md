@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.0] - 2026-07-22
+### Added
+- **Shopping List** — every sent estimate and saved draft now has a 🛒 List button in History that generates a materials buy-list for that job: the tile itself (with waste), thinset/grout, and every material assigned to an enabled service, each auto-quantified using the same purchase-accurate rounding as the estimator
+- **Check-off tracking** — mark items as purchased directly in the list; progress is saved per-job and persists across sessions
+- **Custom items** — add anything not already in your pricing setup (extra tools, one-off materials) with a name, quantity, and cost
+- **Export** — download a plain-text shopping list with quantities, costs, and checkbox state to print or share
+- **Job Status** — sent estimates can be marked Awaiting Approval, Approved, Complete, or Declined; shown as a badge in History, set manually
+- **Materials Status** — a second badge (Need to Buy / All Purchased) tracked automatically from the shopping list's checked state, no manual entry required
+### Fixed
+- `version.json` had drifted out of sync with the shipped app version (was still reporting 1.6.0); the update-detection banner will now trigger correctly going forward
+
 ## [1.7.0] - 2026-07-22
 ### Added
 - **Coverage-based materials generalized beyond bags** — any material priced by coverage (price + sqft covered) can now be sold by bag, box, sheet, roll, bucket, gallon, case, or pail via a new "Sold By" selector, instead of always being labeled "bag"
