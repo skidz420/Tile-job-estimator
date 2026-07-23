@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0] - 2026-07-22
+### Added
+- **Customer auto-save** — Customer Name, Email, and Phone now save automatically as you type (debounced ~0.7s after you stop typing). Matches an existing customer by name (case-insensitive) and updates it, or creates a new one. Replaces the manual "+ Save as new customer" button with a live "Saving to customers…" / "✓ Saved to customers" status
+- **Duplicate customer detection** — if the phone number or email matches an existing customer but the name doesn't (e.g. a typo'd or shortened name), auto-save pauses and shows a prompt to Merge into that existing customer or Save as a separate customer, instead of silently creating a duplicate or guessing
+- **Project Description auto-fill from Job Type** — the Project Description field now fills itself from the Job Type(s) selected on the job's area(s), e.g. "Kitchen Floor & Shower" for a two-area job. Typing your own description overrides the auto-fill; clearing the field resumes auto-fill from the current Job Type selection
+- **Customer tab estimate history is now interactive** — tap an estimate under a customer to expand it and see the status badge, charged/cost/profit/margin breakdown. Open jobs get a "Load into Estimator" button; Completed jobs are view-only (matching the same locked behavior as History/Accounting)
+- **Merge customers** — from a customer's expanded detail (Customer tab), "⇄ Merge" lets you fold one customer into another. Keeps the target's name, fills in any blank email/phone from the one being merged away, reassigns every estimate and draft on file to the merged customer, and removes the duplicate record. Confirmation required before merging — can't be undone
+- **Unified estimate detail everywhere** — clicking into any sent estimate now shows the same thing and offers the same actions no matter where you click it from: History, Accounting, or the Customer tab. That's the status badges, Charged/Cost/Profit/Margin, a status picker, Resend, Load into Estimator, Shopping List, Edit, Delete, and the full Line Items text. The one exception, as before: a job marked Complete is locked (no Load, no Edit) everywhere it's shown
+
 ## [1.12.0] - 2026-07-22
 ### Fixed
 - **Editing/re-sending a loaded sent estimate now updates that record in place** instead of creating a duplicate in History

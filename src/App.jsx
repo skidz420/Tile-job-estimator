@@ -476,6 +476,176 @@ function materialsStatusOf(estimate, settings, shoppingListRec) {
     : { key: "ready", label: "All Purchased", icon: "📦", color: "#6dc47a" };
 }
 
+// ─── Shared expanded-estimate detail ──────────────────────────────────────────
+// Used by History, Accounting, and the Customer tab so that opening any sent estimate,
+// from anywhere in the app, offers the exact same information and actions — Resend, Load
+// into Estimator, Shopping List, Edit, Delete, status picker, economics, and the full line
+// items. The one status-driven difference: a job marked Complete is locked everywhere this
+// renders (no Load, no Edit), same as it's always been in History.
+function EstimateExpandedDetail({ record, onUpdate, onLoad, onDelete, onOpenShoppingList }) {
+  const [isResending, setIsResending] = useState(false);
+  const [resendMode, setResendMode] = useState("email");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+
+  const fmt = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const isComplete = (record.jobStatus || "awaiting") === "complete";
+
+  function startEdit() {
+    setEditForm({
+      customerName: record.customerName || "", customerEmail: record.customerEmail || "",
+      customerPhone: record.customerPhone || "", projectDesc: record.projectDesc || "",
+      emailText: record.emailText || "",
+    });
+    setIsEditing(true);
+    setIsResending(false);
+  }
+
+  return (
+    <div style={{ borderTop: "1px solid #2e2518" }}>
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 8, padding: "12px 16px", background: "#0f0d0a", flexWrap: "wrap" }}>
+        <button onClick={e2 => { e2.stopPropagation(); setIsResending(r => !r); setIsEditing(false); }} style={{
+          flex: 1, minWidth: 90, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+          borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+        }}>{isResending ? "✕ Cancel" : "↩ Resend"}</button>
+        {!isComplete && onLoad && (
+          <button onClick={e2 => { e2.stopPropagation(); onLoad(record); }} style={{
+            flex: 1, minWidth: 90, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+            borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+          }}>↑ Load into Estimator</button>
+        )}
+        {onOpenShoppingList && (
+          <button onClick={e2 => { e2.stopPropagation(); onOpenShoppingList(record); }} style={{
+            flex: 1, minWidth: 90, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+            borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+          }}>🛒 List</button>
+        )}
+        {!isComplete && (
+          <button onClick={e2 => { e2.stopPropagation(); isEditing ? setIsEditing(false) : startEdit(); }} style={{
+            flex: 1, minWidth: 90, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
+            borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+          }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
+        )}
+        {onDelete && (
+          <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this estimate record?")) onDelete(record.id); }} style={{
+            padding: "8px 12px", background: "none", border: "1px solid #3a2518",
+            borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
+          }}>✕</button>
+        )}
+      </div>
+      {isComplete && (
+        <div style={{ padding: "0 16px 12px", fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", fontStyle: "italic" }}>
+          🔒 Locked — this job is marked Complete. Change its status below to edit or load it.
+        </div>
+      )}
+
+      {/* Job economics — charged, cost, profit, margin */}
+      {record.trueCost != null && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "0 16px 12px", background: "#0f0d0a" }}>
+          {[
+            ["Charged", fmt(record.totalPrice), "#e8c870"],
+            ["Cost", fmt(record.trueCost), "#c8b98a"],
+            ["Profit", fmt(record.profit), record.profit >= 0 ? "#6dc47a" : "#c15b48"],
+            ["Margin", (record.margin != null ? record.margin.toFixed(0) : "0") + "%", record.margin >= 0 ? "#6dc47a" : "#c15b48"],
+          ].map(([label, val, color]) => (
+            <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
+              <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Job status picker — always available, even on Complete jobs, since it's how you unlock them */}
+      <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap" }}>
+        {JOB_STATUSES.map(st => {
+          const active = (record.jobStatus || "awaiting") === st.key;
+          return (
+            <button key={st.key} onClick={e2 => { e2.stopPropagation(); onUpdate(record.id, { jobStatus: st.key }); }} style={{
+              padding: "6px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
+              border: `1px solid ${active ? st.color : "#2e2518"}`,
+              background: active ? st.color + "1a" : "transparent",
+              color: active ? st.color : "#5a4f38",
+            }}>{st.icon} {st.label}</button>
+          );
+        })}
+      </div>
+
+      {/* Edit form */}
+      {isEditing && !isComplete && (
+        <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+          <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+            {[["customerName", "Customer Name"], ["customerEmail", "Customer Email"], ["customerPhone", "Customer Phone"], ["projectDesc", "Project Description"]].map(([key, label]) => (
+              <div key={key}>
+                <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>{label}</div>
+                <input value={editForm[key] || ""} onChange={ev => setEditForm(p => ({ ...p, [key]: ev.target.value }))} style={iStyle} />
+              </div>
+            ))}
+            <div>
+              <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Estimate Text (Email)</div>
+              <textarea value={editForm.emailText || ""} onChange={ev => setEditForm(p => ({ ...p, emailText: ev.target.value }))}
+                rows={5} style={{ ...iStyle, resize: "vertical", lineHeight: 1.6, fontSize: 11, fontFamily: "monospace" }} />
+            </div>
+          </div>
+          <button onClick={() => { onUpdate(record.id, editForm); setIsEditing(false); }} style={{
+            width: "100%", padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
+            border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
+            fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
+          }}>Save Changes</button>
+        </div>
+      )}
+
+      {/* Resend options */}
+      {isResending && (
+        <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            {["email", "text"].map(mode => (
+              <button key={mode} onClick={() => setResendMode(mode)} style={{
+                flex: 1, padding: "8px", borderRadius: 6, cursor: "pointer",
+                border: `1px solid ${resendMode === mode ? "#c19748" : "#2e2518"}`,
+                background: resendMode === mode ? "#1e1a10" : "#13110d",
+                color: resendMode === mode ? "#c19748" : "#5a4f38",
+                fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+              }}>{mode === "email" ? "✉ Email" : "💬 Text"}</button>
+            ))}
+          </div>
+          <button onClick={() => {
+            const body = resendMode === "email" ? (record.emailText || record.smsText || "") : (record.smsText || record.emailText || "");
+            const subject = "Tile Installation Estimate #" + record.estNum + (record.customerName ? " — " + record.customerName : "");
+            if (resendMode === "email") {
+              window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
+            } else {
+              const to = record.customerPhone ? record.customerPhone.replace(/\D/g, "") : "";
+              window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
+            }
+          }} style={{
+            width: "100%", padding: "10px", background: "#1e1608",
+            border: "1px solid #c19748", borderRadius: 6, cursor: "pointer",
+            color: "#c19748", fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
+          }}>
+            {resendMode === "email" ? "Open in Mail App →" : "Open in Messages App →"}
+          </button>
+        </div>
+      )}
+
+      {/* Full line-item text, exactly as sent to the customer */}
+      <div style={{ padding: "16px" }}>
+        <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+          Line Items
+        </div>
+        <div style={{
+          background: "#0a0907", border: "1px solid #1e1a12", borderRadius: 6, padding: "12px 14px",
+          fontSize: 11, color: "#6b5f4a", fontFamily: "monospace", lineHeight: 1.8,
+          whiteSpace: "pre-wrap", maxHeight: 320, overflowY: "auto",
+        }}>
+          {record.emailText || record.smsText || "No line items saved — this record was created before text storage was added."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Check Price button (store picker popup) ─────────────────────────────────
 function CheckPriceButton({ term, style }) {
   const [open, setOpen] = useState(false);
@@ -1666,11 +1836,14 @@ function SField({ label, value, onChange, hint, suffix, isText }) {
 
 // ─── Main Estimator ───────────────────────────────────────────────────────────
 // ─── Customers Page ───────────────────────────────────────────────────────────
-function CustomersPage({ customers, estimates, onSave, onDelete }) {
+function CustomersPage({ customers, estimates, onSave, onDelete, onLoad, onMerge, onUpdate, onDeleteEstimate, onOpenShoppingList }) {
   const [search, setSearch]       = useState("");
   const [editing, setEditing]     = useState(null); // null | "new" | customer object
   const [form, setForm]           = useState({ name: "", email: "", phone: "" });
   const [selectedId, setSelectedId] = useState(null);
+  const [expandedEstId, setExpandedEstId] = useState(null);
+  const [mergingId, setMergingId] = useState(null); // customer id currently choosing a merge target
+  const [mergeTargetId, setMergeTargetId] = useState("");
 
   const q = search.trim().toLowerCase();
   const filtered = q
@@ -1780,23 +1953,81 @@ function CustomersPage({ customers, estimates, onSave, onDelete }) {
           {/* Customer estimate history */}
           {selectedId === c.id && (
             <div style={{ background: "#0f0d0a", border: "1px solid #c19748", borderTop: "none", borderRadius: "0 0 8px 8px", padding: "14px 16px", marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
-                Estimate History
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1 }}>
+                  Estimate History
+                </div>
+                {customers.length > 1 && (
+                  <button onClick={e2 => { e2.stopPropagation(); setMergingId(mergingId === c.id ? null : c.id); setMergeTargetId(""); }} style={{
+                    background: "none", border: "1px solid #2e2518", borderRadius: 5, padding: "4px 9px",
+                    cursor: "pointer", color: "#8a7d65", fontSize: 11, fontFamily: "sans-serif",
+                  }}>⇄ Merge</button>
+                )}
               </div>
-              {customerEstimates.length === 0 ? (
-                <div style={{ fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>No estimates sent to this customer yet.</div>
-              ) : customerEstimates.map(e => (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e1a12" }}>
-                  <div>
-                    <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, marginRight: 8 }}>#{e.estNum}</span>
-                    <span style={{ fontSize: 12, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc || e.tileName}</span>
+
+              {mergingId === c.id && (
+                <div style={{ background: "#13110d", border: "1px solid #3a2e1a", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", marginBottom: 8 }}>
+                    Merge <strong style={{ color: "#d4c49a" }}>{c.name}</strong> into another customer — all of their estimates move to that customer, and this record is removed. Can't be undone.
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 13, color: "#e8c870", fontFamily: "sans-serif" }}>{fmtPrice(e.totalPrice)}</div>
-                    <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif" }}>{e.date}</div>
+                  <select value={mergeTargetId} onChange={e => setMergeTargetId(e.target.value)}
+                    style={{ ...iStyle, cursor: "pointer", marginBottom: 8 }}>
+                    <option value="">— Merge into… —</option>
+                    {customers.filter(o => o.id !== c.id).map(o => (
+                      <option key={o.id} value={o.id}>{o.name}{o.phone ? "  •  " + o.phone : ""}</option>
+                    ))}
+                  </select>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button disabled={!mergeTargetId} onClick={() => {
+                      const target = customers.find(o => o.id === mergeTargetId);
+                      if (!target) return;
+                      if (window.confirm(`Merge "${c.name}" into "${target.name}"? This can't be undone.`)) {
+                        onMerge(c.id, mergeTargetId);
+                        setMergingId(null); setMergeTargetId("");
+                        setSelectedId(mergeTargetId);
+                      }
+                    }} style={{
+                      flex: 1, padding: "8px", background: mergeTargetId ? "linear-gradient(135deg,#c19748,#a07830)" : "#2e2518",
+                      border: "none", borderRadius: 6, cursor: mergeTargetId ? "pointer" : "not-allowed",
+                      color: mergeTargetId ? "#0f0f0f" : "#5a4f38", fontSize: 12, fontWeight: 700, fontFamily: "sans-serif",
+                    }}>Confirm Merge</button>
+                    <button onClick={() => { setMergingId(null); setMergeTargetId(""); }} style={{
+                      padding: "8px 14px", background: "none", border: "1px solid #2e2518",
+                      borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
+                    }}>Cancel</button>
                   </div>
                 </div>
-              ))}
+              )}
+              {customerEstimates.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#3a3020", fontFamily: "sans-serif", fontStyle: "italic" }}>No estimates sent to this customer yet.</div>
+              ) : customerEstimates.map(e => {
+                const isExpanded = expandedEstId === e.id;
+                const jStatus = jobStatusOf(e);
+                return (
+                  <div key={e.id} style={{ borderBottom: "1px solid #1e1a12" }}>
+                    <div onClick={() => setExpandedEstId(isExpanded ? null : e.id)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", cursor: "pointer" }}>
+                      <div>
+                        <span style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, marginRight: 8 }}>#{e.estNum}</span>
+                        <span style={{ fontSize: 12, color: "#8a7d65", fontFamily: "sans-serif" }}>{e.projectDesc || e.tileName}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: jStatus.color, background: jStatus.color + "1a", border: `1px solid ${jStatus.color}40`, borderRadius: 10, padding: "1px 7px", fontFamily: "sans-serif", marginLeft: 8 }}>
+                          {jStatus.icon} {jStatus.label}
+                        </span>
+                      </div>
+                      <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, color: "#e8c870", fontFamily: "sans-serif" }}>{fmtPrice(e.totalPrice)}</div>
+                          <div style={{ fontSize: 10, color: "#3a3020", fontFamily: "sans-serif" }}>{e.date}</div>
+                        </div>
+                        <span style={{ color: "#3a3020", fontSize: 11 }}>{isExpanded ? "▲" : "▼"}</span>
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <EstimateExpandedDetail record={e} onUpdate={onUpdate} onLoad={onLoad} onDelete={onDeleteEstimate} onOpenShoppingList={onOpenShoppingList} />
+                    )}
+                  </div>
+                );
+              })}
               {customerEstimates.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, marginTop: 4 }}>
                   <span style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{customerEstimates.length} estimate{customerEstimates.length !== 1 ? "s" : ""}</span>
@@ -1879,19 +2110,11 @@ function getSubBuckets(type, start, end) {
   return buckets;
 }
 
-function AccountingPage({ estimateHistory, onUpdate, onLoad }) {
+function AccountingPage({ estimateHistory, onUpdate, onLoad, onDelete, onOpenShoppingList }) {
   const [periodType, setPeriodType] = useState("week");
   const [anchor, setAnchor] = useState(() => new Date());
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
-
-  function setJobStatus(id, key) {
-    onUpdate(id, { jobStatus: key });
-    // Leaving Complete re-locks nothing; entering Complete closes any open edit for safety.
-    if (key === "complete") setEditingId(prev => prev === id ? null : prev);
-  }
 
   const fmt = v => "$" + Math.round(Number(v || 0)).toLocaleString("en-US");
   const range = getPeriodRange(periodType, anchor);
@@ -2043,7 +2266,6 @@ function AccountingPage({ estimateHistory, onUpdate, onLoad }) {
           const st = jobStatusOf(r);
           const isComplete = (r.jobStatus || "awaiting") === "complete";
           const isExpanded = expandedId === r.id;
-          const isEditing = editingId === r.id;
           return (
             <div key={r.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#6dc47a" : "#2e2518"}`, borderRadius: 8, marginBottom: 8, overflow: "hidden", transition: "border-color 0.15s" }}>
               <div onClick={() => setExpandedId(isExpanded ? null : r.id)}
@@ -2066,76 +2288,7 @@ function AccountingPage({ estimateHistory, onUpdate, onLoad }) {
               </div>
 
               {isExpanded && (
-                <div style={{ borderTop: "1px solid #2e2518" }}>
-                  {/* Economics, when available */}
-                  {r.trueCost != null && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
-                      {[
-                        ["Charged", fmt(r.totalPrice), "#e8c870"],
-                        ["Cost", fmt(r.trueCost), "#c8b98a"],
-                        ["Profit", fmt(p), p >= 0 ? "#6dc47a" : "#c15b48"],
-                        ["Margin", (r.totalPrice ? (p / r.totalPrice * 100) : 0).toFixed(0) + "%", "#c8b98a"],
-                      ].map(([label, val, color]) => (
-                        <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
-                          <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
-                          <div style={{ fontSize: 13, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Status picker — always available so a completed job can be reopened to unlock editing */}
-                  <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap", paddingTop: r.trueCost != null ? 0 : 12 }}>
-                    {JOB_STATUSES.map(jst => {
-                      const active = (r.jobStatus || "awaiting") === jst.key;
-                      return (
-                        <button key={jst.key} onClick={e2 => { e2.stopPropagation(); setJobStatus(r.id, jst.key); }} style={{
-                          padding: "6px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
-                          border: `1px solid ${active ? jst.color : "#2e2518"}`,
-                          background: active ? jst.color + "1a" : "transparent",
-                          color: active ? jst.color : "#5a4f38",
-                        }}>{jst.icon} {jst.label}</button>
-                      );
-                    })}
-                  </div>
-
-                  {isComplete ? (
-                    <div style={{ padding: "0 16px 16px", fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", fontStyle: "italic" }}>
-                      🔒 This job is locked because it's marked Complete. Change its status above to edit it.
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", gap: 8, padding: "0 16px 16px", background: "#0f0d0a" }}>
-                      <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : r.id); setEditForm({ customerName: r.customerName||"", customerEmail: r.customerEmail||"", customerPhone: r.customerPhone||"", projectDesc: r.projectDesc||"" }); }} style={{
-                        flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
-                        borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                      }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
-                      {onLoad && (
-                        <button onClick={e2 => { e2.stopPropagation(); onLoad(r); }} style={{
-                          flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
-                          borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                        }}>↑ Load into Estimator</button>
-                      )}
-                    </div>
-                  )}
-
-                  {isEditing && !isComplete && (
-                    <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
-                      <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
-                        {[["customerName","Customer Name"],["customerEmail","Customer Email"],["customerPhone","Customer Phone"],["projectDesc","Project Description"]].map(([key, label]) => (
-                          <div key={key}>
-                            <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>{label}</div>
-                            <input value={editForm[key]||""} onChange={ev => setEditForm(p2 => ({ ...p2, [key]: ev.target.value }))} style={iStyle} />
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => { onUpdate(r.id, editForm); setEditingId(null); }} style={{
-                        width: "100%", padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
-                        border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
-                        fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
-                      }}>Save Changes</button>
-                    </div>
-                  )}
-                </div>
+                <EstimateExpandedDetail record={r} onUpdate={onUpdate} onLoad={onLoad} onDelete={onDelete} onOpenShoppingList={onOpenShoppingList} />
               )}
             </div>
           );
@@ -2167,31 +2320,12 @@ function AccountingPage({ estimateHistory, onUpdate, onLoad }) {
   );
 }
 
-function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, onUpdate, onDelete, onLoad, onDeleteDraft, onLoadDraft, onSendDraft }) {
+function HistoryPage({ estimateHistory, drafts, customers, settings, shoppingListsById, onOpenShoppingList, onClear, onUpdate, onDelete, onLoad, onDeleteDraft, onLoadDraft, onSendDraft }) {
   const [view, setView]         = useState("open");
   const [search, setSearch]     = useState("");
   const [expandedId, setExpandedId] = useState(null);
-  const [editingId, setEditingId]   = useState(null);
-  const [editForm, setEditForm]     = useState({});
-  const [resendId, setResendId]     = useState(null);
-  const [resendMode, setResendMode] = useState("email");
   const [sendingDraftId, setSendingDraftId] = useState(null);
   const [draftSendMode, setDraftSendMode]   = useState("email");
-  const [shoppingListFor, setShoppingListFor] = useState(null);
-  const [shoppingListsById, setShoppingListsById] = useState({});
-
-  function refreshShoppingLists() {
-    dbGetAll("shoppingLists").then(all => {
-      const byId = {};
-      (all || []).forEach(rec => { byId[rec.estimateId] = rec; });
-      setShoppingListsById(byId);
-    }).catch(() => {});
-  }
-  useEffect(() => { refreshShoppingLists(); }, []);
-
-  function setJobStatus(id, key) {
-    onUpdate(id, { jobStatus: key });
-  }
 
   const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const q = search.trim().toLowerCase();
@@ -2307,7 +2441,7 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>↑ Load & Edit</button>
-                  <button onClick={e2 => { e2.stopPropagation(); setShoppingListFor(d); }} style={{
+                  <button onClick={e2 => { e2.stopPropagation(); onOpenShoppingList(d); }} style={{
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>🛒 List</button>
@@ -2363,15 +2497,12 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
         );
       }) : filtered.map(e => {
         const isExpanded = expandedId === e.id;
-        const isResending = resendId === e.id;
-        const isEditing = editingId === e.id;
         const jStatus = jobStatusOf(e);
-        const isComplete = (e.jobStatus || "awaiting") === "complete";
         const mStatus = materialsStatusOf(e, settings, shoppingListsById[e.id]);
         return (
           <div key={e.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#c19748" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
             {/* Summary row */}
-            <div onClick={() => { setExpandedId(isExpanded ? null : e.id); setResendId(null); }}
+            <div onClick={() => setExpandedId(isExpanded ? null : e.id)}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", cursor: "pointer" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -2402,151 +2533,12 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
               <div style={{ color: "#3a3020", fontSize: 12, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</div>
             </div>
 
-            {/* Expanded view */}
             {isExpanded && (
-              <div style={{ borderTop: "1px solid #2e2518" }}>
-                {/* Action buttons */}
-                <div style={{ display: "flex", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
-                  <button onClick={e2 => { e2.stopPropagation(); setResendId(isResending ? null : e.id); setEditingId(null); }} style={{
-                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
-                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                  }}>{isResending ? "✕ Cancel" : "↩ Resend"}</button>
-                  {!isComplete && (
-                    <button onClick={e2 => { e2.stopPropagation(); onLoad(e); }} style={{
-                      flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
-                      borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                    }}>↑ Load into Estimator</button>
-                  )}
-                  <button onClick={e2 => { e2.stopPropagation(); setShoppingListFor(e); }} style={{
-                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
-                    borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                  }}>🛒 List</button>
-                  {!isComplete && (
-                    <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
-                      flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
-                      borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                    }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
-                  )}
-                  <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this estimate record?")) onDelete(e.id); }} style={{
-                    padding: "8px 12px", background: "none", border: "1px solid #3a2518",
-                    borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
-                  }}>✕</button>
-                </div>
-                {isComplete && (
-                  <div style={{ padding: "0 16px 12px", fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", fontStyle: "italic" }}>
-                    🔒 Locked — this job is marked Complete. Change its status below to edit it.
-                  </div>
-                )}
-
-                {/* Job economics — charged, cost, profit, margin */}
-                {e.trueCost != null && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "0 16px 12px", background: "#0f0d0a" }}>
-                    {[
-                      ["Charged", fmt(e.totalPrice), "#e8c870"],
-                      ["Cost", fmt(e.trueCost), "#c8b98a"],
-                      ["Profit", fmt(e.profit), e.profit >= 0 ? "#6dc47a" : "#c15b48"],
-                      ["Margin", (e.margin != null ? e.margin.toFixed(0) : "0") + "%", e.margin >= 0 ? "#6dc47a" : "#c15b48"],
-                    ].map(([label, val, color]) => (
-                      <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
-                        <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
-                        <div style={{ fontSize: 13, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Job status picker */}
-                <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap" }}>
-                  {JOB_STATUSES.map(st => {
-                    const active = (e.jobStatus || "awaiting") === st.key;
-                    return (
-                      <button key={st.key} onClick={e2 => { e2.stopPropagation(); setJobStatus(e.id, st.key); }} style={{
-                        padding: "6px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
-                        border: `1px solid ${active ? st.color : "#2e2518"}`,
-                        background: active ? st.color + "1a" : "transparent",
-                        color: active ? st.color : "#5a4f38",
-                      }}>{st.icon} {st.label}</button>
-                    );
-                  })}
-                </div>
-
-                {/* Edit form */}
-                {isEditing && !isComplete && (
-                  <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
-                    <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
-                      {[["customerName","Customer Name"],["customerEmail","Customer Email"],["customerPhone","Customer Phone"],["projectDesc","Project Description"]].map(([key, label]) => (
-                        <div key={key}>
-                          <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>{label}</div>
-                          <input value={editForm[key]||""} onChange={ev => setEditForm(p => ({ ...p, [key]: ev.target.value }))} style={iStyle} />
-                        </div>
-                      ))}
-                      <div>
-                        <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Estimate Text (Email)</div>
-                        <textarea value={editForm.emailText||""} onChange={ev => setEditForm(p => ({ ...p, emailText: ev.target.value }))}
-                          rows={5} style={{ ...iStyle, resize: "vertical", lineHeight: 1.6, fontSize: 11, fontFamily: "monospace" }} />
-                      </div>
-                    </div>
-                    <button onClick={() => { onUpdate(e.id, editForm); setEditingId(null); }} style={{
-                      width: "100%", padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
-                      border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
-                      fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
-                    }}>Save Changes</button>
-                  </div>
-                )}
-
-                {/* Resend options */}
-                {isResending && (
-                  <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      {["email", "text"].map(mode => (
-                        <button key={mode} onClick={() => setResendMode(mode)} style={{
-                          flex: 1, padding: "8px", borderRadius: 6, cursor: "pointer",
-                          border: `1px solid ${resendMode === mode ? "#c19748" : "#2e2518"}`,
-                          background: resendMode === mode ? "#1e1a10" : "#13110d",
-                          color: resendMode === mode ? "#c19748" : "#5a4f38",
-                          fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                        }}>{mode === "email" ? "✉ Email" : "💬 Text"}</button>
-                      ))}
-                    </div>
-                    <button onClick={() => {
-                      const body = resendMode === "email" ? (e.emailText || e.smsText || "") : (e.smsText || e.emailText || "");
-                      const subject = "Tile Installation Estimate #" + e.estNum + (e.customerName ? " — " + e.customerName : "");
-                      if (resendMode === "email") {
-                        window.open("mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body));
-                      } else {
-                        const to = e.customerPhone ? e.customerPhone.replace(/\D/g, "") : "";
-                        window.open("sms:" + (to ? "+" + to : "") + "?&body=" + encodeURIComponent(body));
-                      }
-                    }} style={{
-                      width: "100%", padding: "10px", background: "#1e1608",
-                      border: "1px solid #c19748", borderRadius: 6, cursor: "pointer",
-                      color: "#c19748", fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
-                    }}>
-                      {resendMode === "email" ? "Open in Mail App →" : "Open in Messages App →"}
-                    </button>
-                  </div>
-                )}
-
-                {/* Full estimate text */}
-                <div style={{ padding: "16px" }}>
-                  <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-                    Estimate Text
-                  </div>
-                  <div style={{ background: "#0a0907", border: "1px solid #1e1a12", borderRadius: 6, padding: "12px 14px",
-                    fontSize: 11, color: "#6b5f4a", fontFamily: "monospace", lineHeight: 1.8,
-                    whiteSpace: "pre-wrap", maxHeight: 320, overflowY: "auto" }}>
-                    {e.emailText || e.smsText || "No estimate text saved — this record was created before text storage was added."}
-                  </div>
-                </div>
-              </div>
+              <EstimateExpandedDetail record={e} onUpdate={onUpdate} onLoad={onLoad} onDelete={onDelete} onOpenShoppingList={onOpenShoppingList} />
             )}
           </div>
         );
       })}
-
-      {shoppingListFor && (
-        <ShoppingListModal estimate={shoppingListFor} settings={settings} onClose={() => { setShoppingListFor(null); refreshShoppingLists(); }} />
-      )}
     </div>
   );
 }
@@ -2978,7 +2970,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.13.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -3330,6 +3322,35 @@ export default function TileEstimator() {
   const [dbReady, setDbReady] = useState(false);
   const resultRef = useRef(null);
 
+  // Shopping-list tracking — lifted here (rather than duplicated per-page) so History,
+  // Accounting, and the Customer tab all see the same Materials Status and open the same modal.
+  const [shoppingListFor, setShoppingListFor] = useState(null);
+  const [shoppingListsById, setShoppingListsById] = useState({});
+  function refreshShoppingLists() {
+    dbGetAll("shoppingLists").then(all => {
+      const byId = {};
+      (all || []).forEach(rec => { byId[rec.estimateId] = rec; });
+      setShoppingListsById(byId);
+    }).catch(() => {});
+  }
+  useEffect(() => { refreshShoppingLists(); }, []);
+
+
+  // Auto-save customer: tracks the live customer list for the debounced save effect below,
+  // and whether the project description has been hand-edited (so job-type auto-fill backs off).
+  const customersRef = useRef(customers);
+  useEffect(() => { customersRef.current = customers; }, [customers]);
+  const customerSaveTimerRef = useRef(null);
+  const projectDescManualRef = useRef(false);
+  // Duplicate-customer detection: when phone/email matches someone with a different name,
+  // we hold off auto-saving and surface a Merge / Save as new prompt instead.
+  const [duplicateCandidate, setDuplicateCandidate] = useState(null);
+  const duplicateIgnoreKeyRef = useRef("");
+  // Tracks the id of a customer record auto-created for the *current* form session (name typed
+  // before phone/email caught up), so a later phone/email match still checks against everyone
+  // else instead of just comparing the stray record to itself.
+  const autoCreatedIdRef = useRef(null);
+
   // Load from IndexedDB on mount
   useEffect(() => {
     Promise.all([dbGetAll("estimates"), dbGetAll("customers"), dbGetAll("drafts")]).then(([ests, custs, drs]) => {
@@ -3339,6 +3360,109 @@ export default function TileEstimator() {
       setDbReady(true);
     }).catch(() => setDbReady(true));
   }, []);
+
+  // Auto-save customer: once a name is entered, debounce a save of name/email/phone.
+  // A phone or email that matches a *different* customer always surfaces the Merge / Save-as-new
+  // prompt — even if the name currently matches a record we ourselves just auto-created a moment
+  // earlier (name typed before phone caught up), so a same-name self-match never short-circuits
+  // the duplicate check.
+  useEffect(() => {
+    if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
+    const name = customerName.trim();
+    if (!name) { setDuplicateCandidate(null); return; }
+    customerSaveTimerRef.current = setTimeout(() => {
+      const email = customerEmail.trim();
+      const phone = customerPhone.trim();
+      const normPhone = phone.replace(/\D/g, "");
+      const normEmail = email.toLowerCase();
+      const key = name + "|" + email + "|" + phone;
+
+      const nameMatch = customersRef.current.find(c => (c.name || "").trim().toLowerCase() === name.toLowerCase());
+      const excludeId = nameMatch ? nameMatch.id : null;
+
+      let candidate = null, matchField = null;
+      if (normPhone) {
+        candidate = customersRef.current.find(c => c.id !== excludeId && c.phone && c.phone.replace(/\D/g, "") === normPhone);
+        if (candidate) matchField = "phone";
+      }
+      if (!candidate && normEmail) {
+        candidate = customersRef.current.find(c => c.id !== excludeId && (c.email || "").trim().toLowerCase() === normEmail);
+        if (candidate) matchField = "email";
+      }
+
+      if (candidate) {
+        if (duplicateIgnoreKeyRef.current !== key) {
+          setDuplicateCandidate({ id: candidate.id, name: candidate.name, email: candidate.email || "", phone: candidate.phone || "", matchField });
+        }
+        return;
+      }
+      setDuplicateCandidate(null);
+
+      if (nameMatch) {
+        // If an earlier (now-superseded) name produced its own stray record this session, clean it up.
+        if (autoCreatedIdRef.current && autoCreatedIdRef.current !== nameMatch.id) {
+          deleteCustomer(autoCreatedIdRef.current);
+        }
+        autoCreatedIdRef.current = nameMatch.id;
+        if (!(nameMatch.name === name && (nameMatch.email || "") === email && (nameMatch.phone || "") === phone)) {
+          saveCustomer({ id: nameMatch.id, name, email, phone });
+        }
+        return;
+      }
+
+      // Genuinely new — but if this session already created a stray record, update it in place
+      // instead of creating a second one.
+      if (autoCreatedIdRef.current) {
+        saveCustomer({ id: autoCreatedIdRef.current, name, email, phone });
+      } else {
+        saveCustomer({ name, email, phone }).then(rec => { autoCreatedIdRef.current = rec.id; });
+      }
+    }, 700);
+    return () => clearTimeout(customerSaveTimerRef.current);
+  }, [customerName, customerEmail, customerPhone]);
+
+  function resolveDuplicateMerge() {
+    if (!duplicateCandidate) return;
+    // Keep the established customer's name rather than overwriting it with whatever was typed
+    // this time (e.g. a shortened "chris" shouldn't clobber the on-file "Chris Burgess"); fill
+    // in email/phone from what's typed, falling back to what's already on file.
+    const mergedName = duplicateCandidate.name;
+    const mergedEmail = customerEmail.trim() || duplicateCandidate.email || "";
+    const mergedPhone = customerPhone.trim() || duplicateCandidate.phone || "";
+    if (autoCreatedIdRef.current && autoCreatedIdRef.current !== duplicateCandidate.id) {
+      deleteCustomer(autoCreatedIdRef.current); // remove the stray record created before the match was found
+    }
+    saveCustomer({ id: duplicateCandidate.id, name: mergedName, email: mergedEmail, phone: mergedPhone });
+    autoCreatedIdRef.current = duplicateCandidate.id;
+    setCustomerName(mergedName);
+    setCustomerEmail(mergedEmail);
+    setCustomerPhone(mergedPhone);
+    setDuplicateCandidate(null);
+  }
+  function resolveDuplicateAsNew() {
+    const name = customerName.trim(), email = customerEmail.trim(), phone = customerPhone.trim();
+    duplicateIgnoreKeyRef.current = name + "|" + email + "|" + phone;
+    if (autoCreatedIdRef.current) {
+      saveCustomer({ id: autoCreatedIdRef.current, name, email, phone });
+    } else {
+      saveCustomer({ name, email, phone }).then(rec => { autoCreatedIdRef.current = rec.id; });
+    }
+    setDuplicateCandidate(null);
+  }
+
+  // Project description auto-fill: mirrors the selected job type(s) across areas
+  // ("Kitchen Floor & Shower") until the user types their own description.
+  useEffect(() => {
+    if (projectDescManualRef.current) return;
+    const names = [];
+    areas.forEach(a => {
+      if (!a.jobTypeId) return;
+      const jt = (settings.jobTypes || []).find(j => j.id === a.jobTypeId);
+      if (jt?.name && !names.includes(jt.name)) names.push(jt.name);
+    });
+    const auto = names.join(" & ");
+    setProjectDesc(prev => (prev === auto ? prev : auto));
+  }, [areas, settings.jobTypes]);
 
   function handleSaveSettings(s) {
     try { localStorage.setItem("tje_settings", JSON.stringify(s)); } catch (e) {}
@@ -3422,6 +3546,45 @@ export default function TileEstimator() {
     dbDelete("customers", id).then(() => {
       setCustomers(prev => prev.filter(c => c.id !== id));
     });
+  }
+
+  // Merges one customer into another: keeps the target's name, fills in any blank email/phone
+  // from the source, reassigns every estimate and draft that references the source customer's
+  // name so they show up under the merged record, then removes the source customer.
+  function mergeCustomers(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const source = customers.find(c => c.id === sourceId);
+    const target = customers.find(c => c.id === targetId);
+    if (!source || !target) return;
+
+    const mergedName = target.name;
+    const mergedEmail = target.email || source.email || "";
+    const mergedPhone = target.phone || source.phone || "";
+    const srcNameLower = (source.name || "").trim().toLowerCase();
+
+    setEstimateHistory(prev => prev.map(e => {
+      if ((e.customerName || "").trim().toLowerCase() !== srcNameLower) return e;
+      const updated = { ...e, customerName: mergedName };
+      dbPut("estimates", updated);
+      return updated;
+    }));
+    setDrafts(prev => prev.map(d => {
+      if ((d.customerName || "").trim().toLowerCase() !== srcNameLower) return d;
+      const updated = { ...d, customerName: mergedName };
+      dbPut("drafts", updated);
+      return updated;
+    }));
+
+    // Keep the in-progress estimate form in sync if it currently points at the customer being merged away.
+    if ((customerName || "").trim().toLowerCase() === srcNameLower) {
+      setCustomerName(mergedName);
+      setCustomerEmail(mergedEmail);
+      setCustomerPhone(mergedPhone);
+    }
+    if (autoCreatedIdRef.current === sourceId) autoCreatedIdRef.current = targetId;
+
+    saveCustomer({ id: target.id, name: mergedName, email: mergedEmail, phone: mergedPhone });
+    deleteCustomer(source.id);
   }
 
   function updateEstimateRecord(id, updates) {
@@ -3670,6 +3833,8 @@ export default function TileEstimator() {
   function resetEstimate() {
     setAreas([newAreaInput()]); setExpandedAreaId(null);
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
+    projectDescManualRef.current = false;
+    setDuplicateCandidate(null); duplicateIgnoreKeyRef.current = ""; autoCreatedIdRef.current = null;
     setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
     setEditingRecordId(null); setEditingRecordType(null);
@@ -3691,6 +3856,8 @@ export default function TileEstimator() {
     setCustomerEmail(record.customerEmail || "");
     setCustomerPhone(record.customerPhone || "");
     setProjectDesc(record.projectDesc || "");
+    projectDescManualRef.current = true; // respect the saved description; don't overwrite from job type
+    setDuplicateCandidate(null); duplicateIgnoreKeyRef.current = ""; autoCreatedIdRef.current = null;
     setMarkupMode(record.markupMode || "percent");
     setMarkupPercent(record.markupPercent || nv(settings.defaultMarkup, 40));
     setManualPrice("");
@@ -3720,6 +3887,11 @@ export default function TileEstimator() {
           estimateNumber={settings.estimateNumber}
           onClose={() => setShowPresentation(false)}
         />
+      )}
+
+      {/* Shopping List Modal — available from any page (History, Accounting, Customers) */}
+      {shoppingListFor && (
+        <ShoppingListModal estimate={shoppingListFor} settings={settings} onClose={() => { setShoppingListFor(null); refreshShoppingLists(); }} />
       )}
 
       {/* Backup Reminder Banner */}
@@ -3787,6 +3959,11 @@ export default function TileEstimator() {
           estimates={estimateHistory}
           onSave={saveCustomer}
           onDelete={deleteCustomer}
+          onLoad={loadEstimate}
+          onMerge={mergeCustomers}
+          onUpdate={updateEstimateRecord}
+          onDeleteEstimate={deleteEstimateRecord}
+          onOpenShoppingList={setShoppingListFor}
         />
       )
       : page === "history"  ? (
@@ -3795,6 +3972,8 @@ export default function TileEstimator() {
           drafts={drafts}
           customers={customers}
           settings={settings}
+          shoppingListsById={shoppingListsById}
+          onOpenShoppingList={setShoppingListFor}
           onClear={() => { dbClear("estimates").then(() => setEstimateHistory([])); }}
           onUpdate={updateEstimateRecord}
           onDelete={deleteEstimateRecord}
@@ -3805,7 +3984,7 @@ export default function TileEstimator() {
         />
       )
       : page === "accounting" ? (
-        <AccountingPage estimateHistory={estimateHistory} onUpdate={updateEstimateRecord} onLoad={loadEstimate} />
+        <AccountingPage estimateHistory={estimateHistory} onUpdate={updateEstimateRecord} onLoad={loadEstimate} onDelete={deleteEstimateRecord} onOpenShoppingList={setShoppingListFor} />
       )
       : page === "help"     ? <HelpPage />
       : (
@@ -3847,7 +4026,12 @@ export default function TileEstimator() {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Project Description</div>
-                <input value={projectDesc} onChange={e => setProjectDesc(e.target.value)}
+                <input value={projectDesc} onChange={e => {
+                    const v = e.target.value;
+                    setProjectDesc(v);
+                    // Clearing the field resumes auto-fill from the selected job type(s).
+                    projectDescManualRef.current = v.trim() !== "";
+                  }}
                   placeholder="Master Bath Floor & Shower" style={inputStyle} />
               </div>
             </div>
@@ -3864,15 +4048,32 @@ export default function TileEstimator() {
               </div>
             </div>
 
-            {/* Save as new customer */}
-            {customerName && !customers.find(c => c.name.toLowerCase() === customerName.toLowerCase()) && (
-              <button onClick={() => {
-                saveCustomer({ name: customerName, email: customerEmail, phone: customerPhone });
-              }} style={{
-                padding: "7px 14px", background: "none", border: "1px solid #3a3020",
-                borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12,
-                fontFamily: "sans-serif", marginTop: 2,
-              }}>+ Save as new customer</button>
+            {/* Auto-save status — customer is saved automatically as name/email/phone are entered */}
+            {duplicateCandidate ? (
+              <div style={{
+                marginTop: 4, padding: "10px 12px", border: "1px solid #6b5f38", borderRadius: 6,
+                background: "rgba(212,196,154,0.06)",
+              }}>
+                <div style={{ fontSize: 12, color: "#d4c49a", fontFamily: "sans-serif", marginBottom: 8 }}>
+                  This {duplicateCandidate.matchField === "phone" ? "phone number" : "email"} matches an existing customer — <strong>{duplicateCandidate.name}</strong>. Merge into them, or save as a separate customer?
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={resolveDuplicateMerge} style={{
+                    padding: "6px 12px", background: "#3a3020", border: "1px solid #6b5f38", borderRadius: 6,
+                    cursor: "pointer", color: "#e8c870", fontSize: 12, fontFamily: "sans-serif",
+                  }}>Merge into {duplicateCandidate.name.split(" ")[0]}</button>
+                  <button onClick={resolveDuplicateAsNew} style={{
+                    padding: "6px 12px", background: "none", border: "1px solid #3a3020", borderRadius: 6,
+                    cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif",
+                  }}>Save as new customer</button>
+                </div>
+              </div>
+            ) : customerName.trim() && (
+              <div style={{ fontSize: 11, color: "#7a9b7a", fontFamily: "sans-serif", marginTop: 2 }}>
+                {customers.some(c => (c.name || "").trim().toLowerCase() === customerName.trim().toLowerCase())
+                  ? "✓ Saved to customers"
+                  : "Saving to customers…"}
+              </div>
             )}
           </Section>
 
@@ -4781,6 +4982,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.13.0 — Customer Name, Email, and Phone now save automatically as you type (no more \"Save as new customer\" button) — updates the matching customer if the name matches one you already have, or creates a new one. If the phone or email matches an existing customer but the name doesn't, you'll get a Merge / Save as new prompt instead of a silent duplicate. Project Description now auto-fills from the Job Type(s) selected on your area(s) — e.g. \"Kitchen Floor & Shower\" — until you type your own description; clearing the field resumes auto-fill. New ⇄ Merge action on the Customer tab lets you fold one customer into another, moving all their estimates over and removing the duplicate. Clicking into any sent estimate — from History, Accounting, or the Customer tab — now shows the exact same thing and offers the exact same actions: status badges, Charged/Cost/Profit/Margin, a status picker, Resend, Load into Estimator, Shopping List, Edit, Delete, and the full Line Items. Completed jobs stay locked (no Load, no Edit) everywhere, same as always",
           "v1.12.0 — Loading a sent estimate or draft and re-saving/re-sending it now updates that same record instead of creating a duplicate; sending a loaded draft removes the original. Accounting now only counts jobs marked Complete, and adds a Missed Opportunity $ total plus Uncompleted Jobs count. Accounting job rows are now tappable to expand the full cost/profit breakdown, change status, edit, or load into the estimator — split into Missed Opportunities and Completed Jobs sections. History is now three tabs — Open, Completed, Drafts — with Completed jobs locked (view-only) in both places",
           "v1.11.1 — Areas with a Job Type assigned now show that Job Type's name (Backsplash, Kitchen Floor, etc.) as their title everywhere — the live Cost Breakdown, the area card, the customer proposal, and every sent-estimate format — instead of a generic \"Area 1\" / \"Area 2\"",
           "v1.11.0 — Estimates can now be made up of multiple Areas (Kitchen Floor, Backsplash, Shower, etc.) in one job — each with its own square footage, tile, thinset/grout, and services. One combined customer price for the whole job, with the sent estimate and proposal itemizing each area separately",
