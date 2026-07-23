@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.12.0] - 2026-07-22
+### Fixed
+- **Editing/re-sending a loaded sent estimate now updates that record in place** instead of creating a duplicate in History
+- **Editing/re-saving a loaded draft now updates that draft in place** instead of creating a duplicate
+- Sending a loaded draft now removes the original draft record (no leftover copy)
+- **Accounting now only counts jobs marked Complete** — previously it included every sent estimate regardless of status (even Declined), overstating profit totals
+
+### Added
+- **Missed Opportunity** — new stat on the Accounting page showing total $ of jobs in the selected period that aren't marked Complete, plus an **Uncompleted Jobs** count
+- Accounting job rows are now tappable — expand to see the full Charged/Cost/Profit/Margin breakdown and change job status inline
+- From an expanded Accounting row, non-Complete jobs can be edited or loaded into the estimator directly
+- **Completed jobs are now locked** — no editing or loading into the estimator, though the full breakdown remains viewable. Applies on both the Accounting page and the History page
+- Accounting's job list is now split into **Missed Opportunities** and **Completed Jobs** sections
+- History page restructured from 2 tabs (Sent/Drafts) into **3 tabs: Open / Completed / Drafts**, so open work and finished jobs are no longer mixed together
+
 ## [1.11.1] - 2026-07-22
 ### Fixed
 - **Area titles now use the assigned Job Type name** — an area with a Job Type selected (e.g. Backsplash, Kitchen Floor) shows that name everywhere it's presented, instead of a generic "Area 1"/"Area 2". Applies to the live Cost Breakdown, the area card header, the customer proposal's Scope of Work, and all four sent-estimate formats. Falls back to the tile name, then "Area N", if no Job Type is set
