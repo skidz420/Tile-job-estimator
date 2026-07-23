@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.11.1] - 2026-07-22
+### Fixed
+- **Area titles now use the assigned Job Type name** — an area with a Job Type selected (e.g. Backsplash, Kitchen Floor) shows that name everywhere it's presented, instead of a generic "Area 1"/"Area 2". Applies to the live Cost Breakdown, the area card header, the customer proposal's Scope of Work, and all four sent-estimate formats. Falls back to the tile name, then "Area N", if no Job Type is set
+
 ## [1.11.0] - 2026-07-22
 ### Added
 - **Multi-area estimates** — a job can now be made up of several Areas (Kitchen Floor, Backsplash, Shower, etc.) in one estimate, each with its own square footage, tile type, thinset/grout brand, and services. Tap "+ Add Area" for jobs with more than one space
