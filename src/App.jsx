@@ -1879,10 +1879,19 @@ function getSubBuckets(type, start, end) {
   return buckets;
 }
 
-function AccountingPage({ estimateHistory }) {
+function AccountingPage({ estimateHistory, onUpdate, onLoad }) {
   const [periodType, setPeriodType] = useState("week");
   const [anchor, setAnchor] = useState(() => new Date());
   const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  function setJobStatus(id, key) {
+    onUpdate(id, { jobStatus: key });
+    // Leaving Complete re-locks nothing; entering Complete closes any open edit for safety.
+    if (key === "complete") setEditingId(prev => prev === id ? null : prev);
+  }
 
   const fmt = v => "$" + Math.round(Number(v || 0)).toLocaleString("en-US");
   const range = getPeriodRange(periodType, anchor);
@@ -1894,13 +1903,14 @@ function AccountingPage({ estimateHistory }) {
     return d >= r.start && d < r.end;
   };
 
-  const all = estimateHistory || [];
+  const all = (estimateHistory || []).filter(r => r.jobStatus === "complete");
   const inPeriod = all.filter(r => inRange(r, range));
   const withData = inPeriod.filter(r => r.trueCost != null);
   const missingCount = inPeriod.length - withData.length;
 
   const q = search.trim().toLowerCase();
-  const visible = withData.filter(r => !q ||
+  const allInPeriod = (estimateHistory || []).filter(r => inRange(r, range));
+  const visible = allInPeriod.filter(r => !q ||
     (r.customerName || "").toLowerCase().includes(q) ||
     (r.projectDesc || "").toLowerCase().includes(q)
   ).sort((a, b) => new Date(b.dateISO || b.date) - new Date(a.dateISO || a.date));
@@ -1915,6 +1925,12 @@ function AccountingPage({ estimateHistory }) {
   const hasPrevData = prevWithData.length > 0;
   const deltaPct = hasPrevData && prevProfit !== 0 ? ((totalProfit - prevProfit) / Math.abs(prevProfit)) * 100 : null;
 
+  // Missed Opportunity — sent estimates in this period that haven't been marked Complete
+  // (still Awaiting Approval, Approved but not yet done, or Declined). Represents potential
+  // revenue that hasn't (or won't) come in yet.
+  const uncompleted = (estimateHistory || []).filter(r => r.jobStatus !== "complete" && inRange(r, range));
+  const missedOpportunity = uncompleted.reduce((s, r) => s + (r.totalPrice || 0), 0);
+
   const periodNoun = { day: "day", week: "week", month: "month", quarter: "quarter", year: "year" }[periodType];
   const buckets = getSubBuckets(periodType, range.start, range.end);
   const bucketProfits = buckets ? buckets.map(b => withData.reduce((s, r) => inRange(r, b) ? s + ((r.totalPrice || 0) - (r.trueCost || 0)) : s, 0)) : [];
@@ -1923,7 +1939,7 @@ function AccountingPage({ estimateHistory }) {
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px 90px" }}>
       <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 22, color: "#f0ede6", marginBottom: 4 }}>Accounting</div>
-      <div style={{ fontSize: 12, color: "#6b5f4a", fontFamily: "sans-serif", marginBottom: 18 }}>Profit &amp; expense summary across sent estimates</div>
+      <div style={{ fontSize: 12, color: "#6b5f4a", fontFamily: "sans-serif", marginBottom: 18 }}>Profit &amp; expense summary across jobs marked Complete</div>
 
       {/* Period type tabs */}
       <div style={{ display: "flex", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
@@ -1969,6 +1985,8 @@ function AccountingPage({ estimateHistory }) {
           ["Total Expense", fmt(totalCost), "#c8b98a"],
           ["Avg Margin", avgMargin.toFixed(0) + "%", avgMargin >= 0 ? "#6dc47a" : "#c15b48"],
           ["Jobs Completed", String(withData.length), "#c8b98a"],
+          ["Missed Opportunity", fmt(missedOpportunity), "#c15b48"],
+          ["Uncompleted Jobs", String(uncompleted.length), "#c15b48"],
         ].map(([label, val, color]) => (
           <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: 12 }}>
             <div style={{ fontSize: 9, color: "#5a4f38", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "sans-serif", marginBottom: 5 }}>{label}</div>
@@ -2015,35 +2033,142 @@ function AccountingPage({ estimateHistory }) {
           style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontSize: 13, flex: 1, fontFamily: "sans-serif" }} />
       </div>
 
-      {/* Job list */}
-      <div style={{ fontSize: 11, color: "#8a7d5e", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", fontWeight: 600, marginBottom: 10 }}>
-        Jobs This {periodNoun.charAt(0).toUpperCase() + periodNoun.slice(1)}
-      </div>
-      {visible.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "30px 0", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 13 }}>
-          No profit-tracked estimates {q ? "match your search" : "in this period"}.
-        </div>
-      ) : visible.map(r => {
-        const p = (r.totalPrice || 0) - (r.trueCost || 0);
+      {/* Job lists */}
+      {(() => {
+        const missedVisible = visible.filter(r => (r.jobStatus || "awaiting") !== "complete");
+        const completedVisible = visible.filter(r => (r.jobStatus || "awaiting") === "complete");
+
+        const renderJobRow = r => {
+          const p = (r.totalPrice || 0) - (r.trueCost || 0);
+          const st = jobStatusOf(r);
+          const isComplete = (r.jobStatus || "awaiting") === "complete";
+          const isExpanded = expandedId === r.id;
+          const isEditing = editingId === r.id;
+          return (
+            <div key={r.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#6dc47a" : "#2e2518"}`, borderRadius: 8, marginBottom: 8, overflow: "hidden", transition: "border-color 0.15s" }}>
+              <div onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", cursor: "pointer" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 13, color: "#d4c49a", fontWeight: 600, fontFamily: "sans-serif" }}>{r.customerName || "Unnamed customer"}</span>
+                    {isComplete && <span title="Locked — completed jobs can't be edited" style={{ fontSize: 11 }}>🔒</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{r.date}{r.projectDesc ? ` · ${r.projectDesc}` : ""}</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                  <div style={{ fontSize: 13, color: "#e8c870", fontWeight: 600, fontFamily: "sans-serif" }}>{fmt(r.totalPrice)}</div>
+                  {r.trueCost != null ? (
+                    <div style={{ fontSize: 11, color: p >= 0 ? "#6dc47a" : "#c15b48", marginTop: 2, fontFamily: "sans-serif" }}>{p >= 0 ? "+" : ""}{fmt(p)} profit</div>
+                  ) : (
+                    <div style={{ fontSize: 10, color: st.color, marginTop: 2, fontFamily: "sans-serif" }}>{st.icon} {st.label}</div>
+                  )}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div style={{ borderTop: "1px solid #2e2518" }}>
+                  {/* Economics, when available */}
+                  {r.trueCost != null && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "12px 16px", background: "#0f0d0a" }}>
+                      {[
+                        ["Charged", fmt(r.totalPrice), "#e8c870"],
+                        ["Cost", fmt(r.trueCost), "#c8b98a"],
+                        ["Profit", fmt(p), p >= 0 ? "#6dc47a" : "#c15b48"],
+                        ["Margin", (r.totalPrice ? (p / r.totalPrice * 100) : 0).toFixed(0) + "%", "#c8b98a"],
+                      ].map(([label, val, color]) => (
+                        <div key={label} style={{ background: "#13110d", border: "1px solid #2e2518", borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
+                          <div style={{ fontSize: 9, color: "#5a4f38", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
+                          <div style={{ fontSize: 13, color, fontFamily: "sans-serif", fontWeight: 700 }}>{val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Status picker — always available so a completed job can be reopened to unlock editing */}
+                  <div style={{ display: "flex", gap: 6, padding: "0 16px 12px", background: "#0f0d0a", flexWrap: "wrap", paddingTop: r.trueCost != null ? 0 : 12 }}>
+                    {JOB_STATUSES.map(jst => {
+                      const active = (r.jobStatus || "awaiting") === jst.key;
+                      return (
+                        <button key={jst.key} onClick={e2 => { e2.stopPropagation(); setJobStatus(r.id, jst.key); }} style={{
+                          padding: "6px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
+                          border: `1px solid ${active ? jst.color : "#2e2518"}`,
+                          background: active ? jst.color + "1a" : "transparent",
+                          color: active ? jst.color : "#5a4f38",
+                        }}>{jst.icon} {jst.label}</button>
+                      );
+                    })}
+                  </div>
+
+                  {isComplete ? (
+                    <div style={{ padding: "0 16px 16px", fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", fontStyle: "italic" }}>
+                      🔒 This job is locked because it's marked Complete. Change its status above to edit it.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8, padding: "0 16px 16px", background: "#0f0d0a" }}>
+                      <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : r.id); setEditForm({ customerName: r.customerName||"", customerEmail: r.customerEmail||"", customerPhone: r.customerPhone||"", projectDesc: r.projectDesc||"" }); }} style={{
+                        flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
+                        borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                      }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
+                      {onLoad && (
+                        <button onClick={e2 => { e2.stopPropagation(); onLoad(r); }} style={{
+                          flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                          borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                        }}>↑ Load into Estimator</button>
+                      )}
+                    </div>
+                  )}
+
+                  {isEditing && !isComplete && (
+                    <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
+                      <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                        {[["customerName","Customer Name"],["customerEmail","Customer Email"],["customerPhone","Customer Phone"],["projectDesc","Project Description"]].map(([key, label]) => (
+                          <div key={key}>
+                            <div style={{ fontSize: 10, color: "#4a4030", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>{label}</div>
+                            <input value={editForm[key]||""} onChange={ev => setEditForm(p2 => ({ ...p2, [key]: ev.target.value }))} style={iStyle} />
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => { onUpdate(r.id, editForm); setEditingId(null); }} style={{
+                        width: "100%", padding: "10px", background: "linear-gradient(135deg,#c19748,#a07830)",
+                        border: "none", borderRadius: 6, cursor: "pointer", color: "#0f0f0f",
+                        fontSize: 13, fontWeight: 700, fontFamily: "sans-serif",
+                      }}>Save Changes</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        };
+
         return (
-          <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: "#d4c49a", fontWeight: 600, fontFamily: "sans-serif", marginBottom: 3 }}>{r.customerName || "Unnamed customer"}</div>
-              <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif" }}>{r.date}{r.projectDesc ? ` · ${r.projectDesc}` : ""}</div>
+          <>
+            <div style={{ fontSize: 11, color: "#c15b48", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", fontWeight: 600, marginBottom: 10 }}>
+              Missed Opportunities — This {periodNoun.charAt(0).toUpperCase() + periodNoun.slice(1)} ({missedVisible.length})
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 13, color: "#e8c870", fontWeight: 600, fontFamily: "sans-serif" }}>{fmt(r.totalPrice)}</div>
-              <div style={{ fontSize: 11, color: p >= 0 ? "#6dc47a" : "#c15b48", marginTop: 2, fontFamily: "sans-serif" }}>{p >= 0 ? "+" : ""}{fmt(p)} profit</div>
+            {missedVisible.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "20px 0", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 13, marginBottom: 18 }}>
+                No uncompleted jobs {q ? "match your search" : "in this period"}.
+              </div>
+            ) : <div style={{ marginBottom: 18 }}>{missedVisible.map(renderJobRow)}</div>}
+
+            <div style={{ fontSize: 11, color: "#8a7d5e", textTransform: "uppercase", letterSpacing: 1, fontFamily: "sans-serif", fontWeight: 600, marginBottom: 10 }}>
+              Completed Jobs — This {periodNoun.charAt(0).toUpperCase() + periodNoun.slice(1)} ({completedVisible.length})
             </div>
-          </div>
+            {completedVisible.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "20px 0", color: "#5a4f38", fontFamily: "sans-serif", fontSize: 13 }}>
+                No completed jobs {q ? "match your search" : "in this period"}.
+              </div>
+            ) : completedVisible.map(renderJobRow)}
+          </>
         );
-      })}
+      })()}
     </div>
   );
 }
 
 function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, onUpdate, onDelete, onLoad, onDeleteDraft, onLoadDraft, onSendDraft }) {
-  const [view, setView]         = useState("sent");
+  const [view, setView]         = useState("open");
   const [search, setSearch]     = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [editingId, setEditingId]   = useState(null);
@@ -2070,7 +2195,10 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
 
   const fmt = v => "$" + Number(v||0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const q = search.trim().toLowerCase();
-  const filtered = (view === "sent" ? estimateHistory : drafts).filter(e =>
+  const openJobs = estimateHistory.filter(e => (e.jobStatus || "awaiting") !== "complete");
+  const completedJobs = estimateHistory.filter(e => (e.jobStatus || "awaiting") === "complete");
+  const baseList = view === "open" ? openJobs : view === "completed" ? completedJobs : (drafts || []);
+  const filtered = baseList.filter(e =>
     !q ||
     (e.customerName||"").toLowerCase().includes(q) ||
     (e.projectDesc||"").toLowerCase().includes(q) ||
@@ -2080,9 +2208,9 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 20px 60px" }}>
 
-      {/* Sent / Drafts toggle */}
+      {/* Open / Completed / Drafts toggle */}
       <div style={{ display: "flex", gap: 0, marginBottom: 16, background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8, overflow: "hidden" }}>
-        {[["sent", `Sent (${estimateHistory.length})`], ["drafts", `Drafts (${(drafts||[]).length})`]].map(([key, label]) => (
+        {[["open", `Open (${openJobs.length})`], ["completed", `Completed (${completedJobs.length})`], ["drafts", `Drafts (${(drafts||[]).length})`]].map(([key, label]) => (
           <button key={key} onClick={() => { setView(key); setSearch(""); setExpandedId(null); }} style={{
             flex: 1, padding: "10px", border: "none", cursor: "pointer", fontFamily: "sans-serif",
             fontSize: 13, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase",
@@ -2098,16 +2226,16 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
       <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#13110d", border: "1px solid #2e2518", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
         <span style={{ color: "#4a4030", fontSize: 14 }}>🔍</span>
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder={`Search ${view === "sent" ? "sent estimates" : "drafts"}…`}
+          placeholder={`Search ${view === "drafts" ? "drafts" : view === "completed" ? "completed jobs" : "open jobs"}…`}
           style={{ background: "transparent", border: "none", outline: "none", color: "#d4c49a", fontFamily: "sans-serif", fontSize: 13, flex: 1 }} />
         {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "#5a4f38", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif" }}>
-          {filtered.length} {view === "sent" ? "estimate" : "draft"}{filtered.length !== 1 ? "s" : ""}
+          {filtered.length} {view === "drafts" ? "draft" : "job"}{filtered.length !== 1 ? "s" : ""}
         </div>
-        {view === "sent" && estimateHistory.length > 0 && (
+        {(view === "open" || view === "completed") && estimateHistory.length > 0 && (
           <button onClick={() => { if (window.confirm("Clear all sent estimate history?")) onClear(); }}
             style={{ background: "none", border: "1px solid #3a2518", borderRadius: 6, color: "#6b5f4a", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "sans-serif" }}>
             Clear History
@@ -2116,7 +2244,7 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
       </div>
 
       {/* Totals across currently filtered sent estimates that have profit data */}
-      {view === "sent" && filtered.some(e => e.trueCost != null) && (() => {
+      {(view === "open" || view === "completed") && filtered.some(e => e.trueCost != null) && (() => {
         const withData = filtered.filter(e => e.trueCost != null);
         const totalCharged = withData.reduce((s, e) => s + (e.totalPrice || 0), 0);
         const totalCost    = withData.reduce((s, e) => s + (e.trueCost || 0), 0);
@@ -2141,8 +2269,8 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#3a3020", fontFamily: "sans-serif" }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>{view === "sent" ? "📋" : "💾"}</div>
-          <div style={{ fontSize: 14 }}>{q ? "No results match your search." : view === "sent" ? "No estimates sent yet." : "No drafts saved yet."}</div>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>{view === "drafts" ? "💾" : view === "completed" ? "🏁" : "📋"}</div>
+          <div style={{ fontSize: 14 }}>{q ? "No results match your search." : view === "drafts" ? "No drafts saved yet." : view === "completed" ? "No completed jobs yet." : "No open jobs."}</div>
           {!q && view === "drafts" && <div style={{ fontSize: 12, marginTop: 6, color: "#2e2518" }}>After calculating, tap 💾 Save Draft to save here.</div>}
         </div>
       ) : view === "drafts" ? filtered.map(d => {
@@ -2238,6 +2366,7 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
         const isResending = resendId === e.id;
         const isEditing = editingId === e.id;
         const jStatus = jobStatusOf(e);
+        const isComplete = (e.jobStatus || "awaiting") === "complete";
         const mStatus = materialsStatusOf(e, settings, shoppingListsById[e.id]);
         return (
           <div key={e.id} style={{ background: "#13110d", border: `1px solid ${isExpanded ? "#c19748" : "#2e2518"}`, borderRadius: 8, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
@@ -2282,23 +2411,32 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>{isResending ? "✕ Cancel" : "↩ Resend"}</button>
-                  <button onClick={e2 => { e2.stopPropagation(); onLoad(e); }} style={{
-                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
-                    borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                  }}>↑ Load into Estimator</button>
+                  {!isComplete && (
+                    <button onClick={e2 => { e2.stopPropagation(); onLoad(e); }} style={{
+                      flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
+                      borderRadius: 6, cursor: "pointer", color: "#6dc47a", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                    }}>↑ Load into Estimator</button>
+                  )}
                   <button onClick={e2 => { e2.stopPropagation(); setShoppingListFor(e); }} style={{
                     flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #3a2e1a",
                     borderRadius: 6, cursor: "pointer", color: "#c19748", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
                   }}>🛒 List</button>
-                  <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
-                    flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
-                    borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
-                  }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
+                  {!isComplete && (
+                    <button onClick={e2 => { e2.stopPropagation(); setEditingId(isEditing ? null : e.id); setEditForm({ customerName: e.customerName||"", customerEmail: e.customerEmail||"", customerPhone: e.customerPhone||"", projectDesc: e.projectDesc||"", emailText: e.emailText||"", smsText: e.smsText||"" }); setResendId(null); }} style={{
+                      flex: 1, padding: "8px", background: "#1a1610", border: "1px solid #2e2518",
+                      borderRadius: 6, cursor: "pointer", color: "#8a7d65", fontSize: 12, fontFamily: "sans-serif", fontWeight: 600,
+                    }}>{isEditing ? "✕ Cancel Edit" : "✎ Edit"}</button>
+                  )}
                   <button onClick={e2 => { e2.stopPropagation(); if (window.confirm("Delete this estimate record?")) onDelete(e.id); }} style={{
                     padding: "8px 12px", background: "none", border: "1px solid #3a2518",
                     borderRadius: 6, cursor: "pointer", color: "#6b5f4a", fontSize: 12, fontFamily: "sans-serif",
                   }}>✕</button>
                 </div>
+                {isComplete && (
+                  <div style={{ padding: "0 16px 12px", fontSize: 11, color: "#6b5f4a", fontFamily: "sans-serif", fontStyle: "italic" }}>
+                    🔒 Locked — this job is marked Complete. Change its status below to edit it.
+                  </div>
+                )}
 
                 {/* Job economics — charged, cost, profit, margin */}
                 {e.trueCost != null && (
@@ -2333,7 +2471,7 @@ function HistoryPage({ estimateHistory, drafts, customers, settings, onClear, on
                 </div>
 
                 {/* Edit form */}
-                {isEditing && (
+                {isEditing && !isComplete && (
                   <div style={{ padding: "0 16px 16px", background: "#0f0d0a" }}>
                     <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
                       {[["customerName","Customer Name"],["customerEmail","Customer Email"],["customerPhone","Customer Phone"],["projectDesc","Project Description"]].map(([key, label]) => (
@@ -2840,7 +2978,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.11.1";
+const APP_VERSION = "1.12.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -3162,6 +3300,10 @@ export default function TileEstimator() {
 
   const [areas, setAreas] = useState(() => [newAreaInput()]);
   const [expandedAreaId, setExpandedAreaId] = useState(null);
+  // When an existing sent estimate or draft is loaded via "Load into Estimator" / "Load & Edit",
+  // this tracks its id + type so re-sending/re-saving updates that record instead of creating a duplicate.
+  const [editingRecordId, setEditingRecordId] = useState(null);
+  const [editingRecordType, setEditingRecordType] = useState(null); // "estimate" | "draft" | null
   const [jobNotes, setJobNotes]             = useState("");
   const [customerName, setCustomerName]     = useState("");
   const [customerEmail, setCustomerEmail]   = useState("");
@@ -3213,9 +3355,9 @@ export default function TileEstimator() {
     setTimeout(() => { setSavedMsg(false); setPage("estimate"); }, 1200);
   }
 
-  function saveEstimateToHistory(estNum, customerName, customerEmail, customerPhone, projectDesc, totalPrice, emailText, smsText) {
+  function saveEstimateToHistory(estNum, customerName, customerEmail, customerPhone, projectDesc, totalPrice, emailText, smsText, existingId) {
     const record = {
-      id: uid(),
+      id: existingId || uid(),
       date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
       dateISO: new Date().toISOString(),
       estNum,
@@ -3242,9 +3384,12 @@ export default function TileEstimator() {
     };
     dbPut("estimates", record).then(() => {
       setEstimateHistory(prev => {
-        const next = [record, ...prev].slice(0, 500);
+        const exists = prev.some(r => r.id === record.id);
+        const next = exists
+          ? prev.map(r => r.id === record.id ? record : r)
+          : [record, ...prev].slice(0, 500);
         // Also trim IndexedDB itself so it doesn't grow unbounded past the cap
-        if (prev.length + 1 > 500) {
+        if (!exists && prev.length + 1 > 500) {
           dbGetAll("estimates").then(all => {
             const sorted = all.sort((a, b) => new Date(b.dateISO||b.date) - new Date(a.dateISO||a.date));
             const excess = sorted.slice(500);
@@ -3254,7 +3399,10 @@ export default function TileEstimator() {
         return next;
       });
     }).catch(() => {
-      setEstimateHistory(prev => [record, ...prev].slice(0, 500));
+      setEstimateHistory(prev => {
+        const exists = prev.some(r => r.id === record.id);
+        return exists ? prev.map(r => r.id === record.id ? record : r) : [record, ...prev].slice(0, 500);
+      });
     });
   }
 
@@ -3292,11 +3440,17 @@ export default function TileEstimator() {
   }
 
   function saveDraft() {
-    const draftCounter = parseInt(localStorage.getItem("tje_draft_number") || "0") + 1;
-    localStorage.setItem("tje_draft_number", String(draftCounter));
-    const draftNum = "D-" + String(draftCounter).padStart(4, "0");
+    const isUpdatingExisting = editingRecordType === "draft" && editingRecordId;
+    let draftNum;
+    if (isUpdatingExisting) {
+      draftNum = drafts.find(d => d.id === editingRecordId)?.draftNum || "D-0000";
+    } else {
+      const draftCounter = parseInt(localStorage.getItem("tje_draft_number") || "0") + 1;
+      localStorage.setItem("tje_draft_number", String(draftCounter));
+      draftNum = "D-" + String(draftCounter).padStart(4, "0");
+    }
     const record = {
-      id: uid(),
+      id: isUpdatingExisting ? editingRecordId : uid(),
       draftNum,
       date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
       dateISO: new Date().toISOString(),
@@ -3317,8 +3471,9 @@ export default function TileEstimator() {
       status: "draft",
     };
     dbPut("drafts", record).then(() => {
-      setDrafts(prev => [record, ...prev]);
+      setDrafts(prev => isUpdatingExisting ? prev.map(d => d.id === record.id ? record : d) : [record, ...prev]);
     });
+    setEditingRecordId(record.id); setEditingRecordType("draft");
     return draftNum;
   }
 
@@ -3517,6 +3672,7 @@ export default function TileEstimator() {
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
     setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
+    setEditingRecordId(null); setEditingRecordType(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -3539,6 +3695,8 @@ export default function TileEstimator() {
     setMarkupPercent(record.markupPercent || nv(settings.defaultMarkup, 40));
     setManualPrice("");
     setShowBreakdown(false);
+    setEditingRecordId(record.id || null);
+    setEditingRecordType(record.estNum ? "estimate" : (record.draftNum ? "draft" : null));
     setPage("estimate");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -3647,7 +3805,7 @@ export default function TileEstimator() {
         />
       )
       : page === "accounting" ? (
-        <AccountingPage estimateHistory={estimateHistory} />
+        <AccountingPage estimateHistory={estimateHistory} onUpdate={updateEstimateRecord} onLoad={loadEstimate} />
       )
       : page === "help"     ? <HelpPage />
       : (
@@ -3918,6 +4076,17 @@ export default function TileEstimator() {
                 customerPhone={customerPhone}
                 projectDesc={projectDesc}
                 onEstimateSent={(emailText, smsText) => {
+                  if (editingRecordType === "estimate" && editingRecordId) {
+                    // Re-sending an already-sent estimate: update it in place, keep its original number.
+                    const originalEstNum = estimateHistory.find(r => r.id === editingRecordId)?.estNum
+                      || String(settings.estimateNumber || 1).padStart(4, "0");
+                    saveEstimateToHistory(
+                      originalEstNum,
+                      customerName, customerEmail, customerPhone, projectDesc, customerPrice, emailText, smsText,
+                      editingRecordId
+                    );
+                    return;
+                  }
                   setSettings(p => {
                     const next = { ...p, estimateNumber: (p.estimateNumber || 1) + 1 };
                     try { localStorage.setItem("tje_settings", JSON.stringify(next)); } catch (e) {}
@@ -3927,6 +4096,11 @@ export default function TileEstimator() {
                     String(settings.estimateNumber || 1).padStart(4, "0"),
                     customerName, customerEmail, customerPhone, projectDesc, customerPrice, emailText, smsText
                   );
+                  // A loaded draft becomes a real sent estimate — remove the draft so it isn't left behind as a duplicate.
+                  if (editingRecordType === "draft" && editingRecordId) {
+                    deleteDraft(editingRecordId);
+                  }
+                  setEditingRecordId(null); setEditingRecordType(null);
                 }}
               />
               <button onClick={() => setShowPresentation(true)} style={{
@@ -4607,6 +4781,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.12.0 — Loading a sent estimate or draft and re-saving/re-sending it now updates that same record instead of creating a duplicate; sending a loaded draft removes the original. Accounting now only counts jobs marked Complete, and adds a Missed Opportunity $ total plus Uncompleted Jobs count. Accounting job rows are now tappable to expand the full cost/profit breakdown, change status, edit, or load into the estimator — split into Missed Opportunities and Completed Jobs sections. History is now three tabs — Open, Completed, Drafts — with Completed jobs locked (view-only) in both places",
           "v1.11.1 — Areas with a Job Type assigned now show that Job Type's name (Backsplash, Kitchen Floor, etc.) as their title everywhere — the live Cost Breakdown, the area card, the customer proposal, and every sent-estimate format — instead of a generic \"Area 1\" / \"Area 2\"",
           "v1.11.0 — Estimates can now be made up of multiple Areas (Kitchen Floor, Backsplash, Shower, etc.) in one job — each with its own square footage, tile, thinset/grout, and services. One combined customer price for the whole job, with the sent estimate and proposal itemizing each area separately",
           "v1.10.0 — New Job Type presets (Kitchen Floor, Backsplash, Shower, and any you add) — pick one on the estimator and it auto-checks the services that job usually needs, without unchecking anything you already picked. Materials can now be tagged as Thinset or Grout, so you can stock multiple brands and choose which one to use per job instead of always using a single fixed material — your pick is remembered on saved estimates and drafts",
