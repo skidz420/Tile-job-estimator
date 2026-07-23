@@ -326,6 +326,17 @@ function areasOf(record) {
   }];
 }
 
+// Label shown for an area everywhere it's presented to the customer or contractor:
+// the assigned Job Type name (e.g. "Backsplash", "Kitchen Floor") takes priority since
+// it's the clearest description of what the area actually is; falls back to the tile
+// name, then a generic "Area N".
+function areaLabel(input, tile, idx, jobTypes) {
+  const jt = input?.jobTypeId ? (jobTypes || []).find(j => j.id === input.jobTypeId) : null;
+  if (jt?.name) return jt.name;
+  if (tile?.name) return tile.name;
+  return "Area " + (idx + 1);
+}
+
 // Pure per-area cost calculation — the single source of truth used by the live estimator,
 // History display, shopping list, customer presentation, and every sent-estimate format.
 function computeAreaCost(input, settings) {
@@ -2688,7 +2699,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
                 {multiArea && (
                   <div style={{ padding: "13px 20px", background: "rgba(193,151,72,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <div style={{ fontSize: 15, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{tile?.name || `Area ${idx + 1}`}</div>
+                      <div style={{ fontSize: 15, color: "#e8c870", fontFamily: "'Georgia','Times New Roman',serif" }}>{areaLabel(input, tile, idx, settings.jobTypes)}</div>
                       <div style={{ fontSize: 11, color: "#5a4f38", fontFamily: "sans-serif", marginTop: 2 }}>{area} sqft</div>
                     </div>
                     <div style={{ fontSize: 15, color: "#c19748", fontWeight: 700, fontFamily: "sans-serif" }}>{mp(subtotal)}</div>
@@ -2829,7 +2840,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.11.1";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -2901,7 +2912,7 @@ function AreaCard({ index, input, computed, settings, expanded, onToggleExpand, 
       }}>
         <div style={{ textAlign: "left" }}>
           <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "sans-serif" }}>
-            {tile ? `${index + 1}. ${tile.name}` : `Area ${index + 1}`}
+            {(tile || input.jobTypeId) ? `${index + 1}. ${areaLabel(input, tile, index, settings.jobTypes)}` : `Area ${index + 1}`}
           </div>
           <div style={{ fontSize: 11, color: "#8a7d65", fontFamily: "sans-serif", marginTop: 2 }}>
             {area > 0 ? `${area} sqft` : "No sqft yet"}{tile ? "" : " · No tile yet"}
@@ -3829,7 +3840,7 @@ export default function TileEstimator() {
                       <div key={input.id}>
                         {areas.length > 1 && (
                           <div style={{ padding: "10px 24px 4px", fontSize: 12, color: "#c19748", fontFamily: "sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                            {tile?.name ? tile.name : `Area ${idx + 1}`} — {caArea} sqft
+                            {areaLabel(input, tile, idx, settings.jobTypes)} — {caArea} sqft
                           </div>
                         )}
                         {caTileCostPerSqFt > 0
@@ -4049,7 +4060,7 @@ function SendEstimateButtons({ settings, areas, trueCost, customerPrice, profit,
       const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
       if (multiArea) {
         L.push("");
-        L.push("  " + (tile?.name ? tile.name + " — " : "") + "Area " + (idx + 1) + " (" + area + " sqft)");
+        L.push("  " + areaLabel(input, tile, idx, settings.jobTypes) + " (" + area + " sqft)");
       }
       if (!tileSupplied) {
         L.push("  " + (tile?.name || "Tile") + " (" + tileWithWaste.toFixed(0) + " sqft)   " + mp(tileCost));
@@ -4116,9 +4127,9 @@ function SendEstimateButtons({ settings, areas, trueCost, customerPrice, profit,
     L.push("");
 
     computed.forEach((ca, idx) => {
-      const { tile, area, tileWithWaste, tileCostPerSqFt, tileCost, laborCost, thinsetC, groutC, thinsetCost, groutCost, enabledServices } = ca;
+      const { input, tile, area, tileWithWaste, tileCostPerSqFt, tileCost, laborCost, thinsetC, groutC, thinsetCost, groutCost, enabledServices } = ca;
       const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
-      if (multiArea) L.push((tile?.name || "Area " + (idx + 1)) + " (" + area + " sqft):");
+      if (multiArea) L.push(areaLabel(input, tile, idx, settings.jobTypes) + " (" + area + " sqft):");
       if (!tileSupplied) L.push("Tile material        " + mp(tileCost));
       if (tile)          L.push("Installation         " + mp(laborCost));
       if (thinsetC && thinsetCost > 0) L.push(thinsetC.name + "     " + mp(thinsetCost));
@@ -4174,10 +4185,10 @@ function SendEstimateButtons({ settings, areas, trueCost, customerPrice, profit,
     L.push("ESTIMATE SUMMARY");
     L.push("─────────────────────────────────────");
     computed.forEach((ca, idx) => {
-      const { tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
+      const { input, tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
       const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
       const matCost = (tileSupplied ? 0 : tileCost) + thinsetCost + groutCost;
-      const label = multiArea ? (tile?.name ? tile.name : "Area " + (idx + 1)) + " (" + area + " sqft)" : "Materials";
+      const label = multiArea ? areaLabel(input, tile, idx, settings.jobTypes) + " (" + area + " sqft)" : "Materials";
       L.push("  " + label);
       L.push("    Materials  " + (tileSupplied && matCost === 0 ? "Customer supplied" : mp(matCost)));
       L.push("    Labor      " + mp(laborCost));
@@ -4222,10 +4233,10 @@ function SendEstimateButtons({ settings, areas, trueCost, customerPrice, profit,
     if (jobNotes && jobNotes.trim()) L.push("Note: " + jobNotes.trim().replace(/\n/g, " "));
     L.push("");
     computed.forEach((ca, idx) => {
-      const { tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
+      const { input, tile, area, tileCostPerSqFt, laborCost, thinsetCost, groutCost, servicesCost, tileCost } = ca;
       const tileSupplied = !tileCostPerSqFt || tileCostPerSqFt === 0;
       const matCost = (tileSupplied ? 0 : tileCost) + thinsetCost + groutCost;
-      if (multiArea) L.push((tile?.name || "Area " + (idx + 1)) + " (" + area + " sqft)");
+      if (multiArea) L.push(areaLabel(input, tile, idx, settings.jobTypes) + " (" + area + " sqft)");
       L.push("Materials       " + (tileSupplied && matCost === 0 ? "Customer supplied" : mp(matCost)));
       L.push("Labor           " + mp(laborCost));
       if (servicesCost > 0) L.push("Services        " + mp(servicesCost));
@@ -4596,6 +4607,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.11.1 — Areas with a Job Type assigned now show that Job Type's name (Backsplash, Kitchen Floor, etc.) as their title everywhere — the live Cost Breakdown, the area card, the customer proposal, and every sent-estimate format — instead of a generic \"Area 1\" / \"Area 2\"",
           "v1.11.0 — Estimates can now be made up of multiple Areas (Kitchen Floor, Backsplash, Shower, etc.) in one job — each with its own square footage, tile, thinset/grout, and services. One combined customer price for the whole job, with the sent estimate and proposal itemizing each area separately",
           "v1.10.0 — New Job Type presets (Kitchen Floor, Backsplash, Shower, and any you add) — pick one on the estimator and it auto-checks the services that job usually needs, without unchecking anything you already picked. Materials can now be tagged as Thinset or Grout, so you can stock multiple brands and choose which one to use per job instead of always using a single fixed material — your pick is remembered on saved estimates and drafts",
           "v1.9.0 — Materials can now use a custom waste % instead of the job default; Tile Types can be assigned Required Services that auto-enable when you pick that tile on the estimator; sent estimates now save true cost, profit $, and margin % (shown as a breakdown in History); new Accounting tab with Day/Week/Month/Quarter/Year views showing net profit, total charged, total expense, average margin, a profit chart, and a searchable job list per period",
