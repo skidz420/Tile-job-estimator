@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.13.1] - 2026-07-23
+### Fixed
+- **Customer auto-save no longer wipes saved contact info** — typing an existing customer's name into the free-text Name field (instead of picking from the dropdown) previously updated their record with the empty Email/Phone fields, blanking out what was on file. An empty form field now never overwrites saved contact info (fill-forward, matching the Merge prompt's behavior), and the matched customer's email/phone now auto-fill into the form, same as the dropdown picker
+- **Loading an estimate no longer overwrites the customer's current contact info** — loading a saved estimate/draft fills the form from that estimate's snapshot, which was then immediately auto-saved back onto the customer record, silently reverting newer contact info to stale data. The first auto-save cycle after a load is now skipped; the customer record only updates when a customer field is actually edited
+- **Typing past an existing customer's name no longer renames or deletes them** — pausing mid-typing at a name that exactly matched an existing customer (e.g. "Sarah" on the way to "Sarah Williams") bound the form session to that customer, so finishing the longer name renamed the existing record in place. Pre-existing customers are now never renamed or deleted by the auto-save flow — a separate record is created instead — and contact info auto-filled from a name match is cleared again if the name moves off that customer before it's been edited. The "Save as separate customer" option in the duplicate prompt now also updates an exact name match with fill-forward instead of ever blanking its saved info
+
 ## [1.13.0] - 2026-07-22
 ### Added
 - **Customer auto-save** — Customer Name, Email, and Phone now save automatically as you type (debounced ~0.7s after you stop typing). Matches an existing customer by name (case-insensitive) and updates it, or creates a new one. Replaces the manual "+ Save as new customer" button with a live "Saving to customers…" / "✓ Saved to customers" status
