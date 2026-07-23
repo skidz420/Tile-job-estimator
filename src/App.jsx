@@ -2970,7 +2970,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.13.1";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -3350,6 +3350,18 @@ export default function TileEstimator() {
   // before phone/email caught up), so a later phone/email match still checks against everyone
   // else instead of just comparing the stray record to itself.
   const autoCreatedIdRef = useRef(null);
+  // True when autoCreatedIdRef points at a customer that already existed before this form
+  // session (bound via a name match); false when it's a record this session created. Guards
+  // against typing *past* an existing customer's name (pausing at "Sarah" en route to
+  // "Sarah Williams") renaming or deleting that pre-existing customer.
+  const boundToExistingRef = useRef(false);
+  // Tracks contact fields auto-filled from a name-matched customer, so if the name then moves
+  // off that customer, un-edited auto-filled values are cleared instead of being carried onto
+  // a different customer's record.
+  const lastAutoFillRef = useRef(null); // { fromId, name, email, phone } | null
+  // Set when loading a saved estimate/draft: skips the next auto-save cycle so a loaded
+  // snapshot doesn't overwrite the customer's current record with stale contact info.
+  const skipNextAutoSaveRef = useRef(false);
 
   // Load from IndexedDB on mount
   useEffect(() => {
@@ -3368,6 +3380,9 @@ export default function TileEstimator() {
   // the duplicate check.
   useEffect(() => {
     if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
+    // A just-loaded estimate/draft populated these fields from its snapshot — don't push that
+    // (possibly stale) contact info back onto the customer record. Resumes on the next edit.
+    if (skipNextAutoSaveRef.current) { skipNextAutoSaveRef.current = false; return; }
     const name = customerName.trim();
     if (!name) { setDuplicateCandidate(null); return; }
     customerSaveTimerRef.current = setTimeout(() => {
@@ -3376,6 +3391,18 @@ export default function TileEstimator() {
       const normPhone = phone.replace(/\D/g, "");
       const normEmail = email.toLowerCase();
       const key = name + "|" + email + "|" + phone;
+
+      // If a previous cycle auto-filled contact info from a name match and the name has since
+      // moved off that customer, clear any auto-filled values the user hasn't edited so they
+      // don't get carried onto a different customer's record.
+      const af = lastAutoFillRef.current;
+      if (af && af.name.toLowerCase() !== name.toLowerCase()) {
+        lastAutoFillRef.current = null;
+        let cleared = false;
+        if (af.email && email === af.email) { setCustomerEmail(""); cleared = true; }
+        if (af.phone && phone === af.phone) { setCustomerPhone(""); cleared = true; }
+        if (cleared) return; // the state change re-runs this effect with the cleaned values
+      }
 
       const nameMatch = customersRef.current.find(c => (c.name || "").trim().toLowerCase() === name.toLowerCase());
       const excludeId = nameMatch ? nameMatch.id : null;
@@ -3399,22 +3426,42 @@ export default function TileEstimator() {
       setDuplicateCandidate(null);
 
       if (nameMatch) {
-        // If an earlier (now-superseded) name produced its own stray record this session, clean it up.
-        if (autoCreatedIdRef.current && autoCreatedIdRef.current !== nameMatch.id) {
+        // If an earlier (now-superseded) name produced its own stray record this session, clean
+        // it up — but only a record *we created*; never delete a pre-existing customer.
+        if (autoCreatedIdRef.current && autoCreatedIdRef.current !== nameMatch.id && !boundToExistingRef.current) {
           deleteCustomer(autoCreatedIdRef.current);
         }
         autoCreatedIdRef.current = nameMatch.id;
-        if (!(nameMatch.name === name && (nameMatch.email || "") === email && (nameMatch.phone || "") === phone)) {
-          saveCustomer({ id: nameMatch.id, name, email, phone });
+        boundToExistingRef.current = true;
+        // Fill-forward: an empty form field never blanks out contact info already on file.
+        const mergedEmail = email || nameMatch.email || "";
+        const mergedPhone = phone || nameMatch.phone || "";
+        // Auto-fill the visible fields from the matched record — same behavior as picking
+        // the customer from the dropdown.
+        if (!email && nameMatch.email) setCustomerEmail(nameMatch.email);
+        if (!phone && nameMatch.phone) setCustomerPhone(nameMatch.phone);
+        if ((!email && nameMatch.email) || (!phone && nameMatch.phone)) {
+          lastAutoFillRef.current = {
+            fromId: nameMatch.id, name: nameMatch.name,
+            email: !email ? (nameMatch.email || "") : "",
+            phone: !phone ? (nameMatch.phone || "") : "",
+          };
+        }
+        if (!(nameMatch.name === name && (nameMatch.email || "") === mergedEmail && (nameMatch.phone || "") === mergedPhone)) {
+          saveCustomer({ id: nameMatch.id, name, email: mergedEmail, phone: mergedPhone });
         }
         return;
       }
 
-      // Genuinely new — but if this session already created a stray record, update it in place
-      // instead of creating a second one.
-      if (autoCreatedIdRef.current) {
+      // Genuinely new — if this session already created a stray record, update it in place
+      // instead of creating a second one. But if the form was bound to a *pre-existing*
+      // customer (name match) and the name has now moved past it, leave that customer
+      // untouched and start a fresh record instead of renaming them.
+      if (autoCreatedIdRef.current && !boundToExistingRef.current) {
         saveCustomer({ id: autoCreatedIdRef.current, name, email, phone });
       } else {
+        boundToExistingRef.current = false;
+        autoCreatedIdRef.current = null; // drop any stale binding before the new record's id lands
         saveCustomer({ name, email, phone }).then(rec => { autoCreatedIdRef.current = rec.id; });
       }
     }, 700);
@@ -3429,11 +3476,12 @@ export default function TileEstimator() {
     const mergedName = duplicateCandidate.name;
     const mergedEmail = customerEmail.trim() || duplicateCandidate.email || "";
     const mergedPhone = customerPhone.trim() || duplicateCandidate.phone || "";
-    if (autoCreatedIdRef.current && autoCreatedIdRef.current !== duplicateCandidate.id) {
+    if (autoCreatedIdRef.current && autoCreatedIdRef.current !== duplicateCandidate.id && !boundToExistingRef.current) {
       deleteCustomer(autoCreatedIdRef.current); // remove the stray record created before the match was found
     }
     saveCustomer({ id: duplicateCandidate.id, name: mergedName, email: mergedEmail, phone: mergedPhone });
     autoCreatedIdRef.current = duplicateCandidate.id;
+    boundToExistingRef.current = true;
     setCustomerName(mergedName);
     setCustomerEmail(mergedEmail);
     setCustomerPhone(mergedPhone);
@@ -3442,9 +3490,20 @@ export default function TileEstimator() {
   function resolveDuplicateAsNew() {
     const name = customerName.trim(), email = customerEmail.trim(), phone = customerPhone.trim();
     duplicateIgnoreKeyRef.current = name + "|" + email + "|" + phone;
-    if (autoCreatedIdRef.current) {
+    // If the typed name exactly matches a different existing customer, "save as separate"
+    // means update *that* customer (fill-forward, never blanking saved contact info).
+    const nameMatch = customersRef.current.find(c =>
+      c.id !== duplicateCandidate?.id && (c.name || "").trim().toLowerCase() === name.toLowerCase()
+    );
+    if (nameMatch) {
+      saveCustomer({ id: nameMatch.id, name, email: email || nameMatch.email || "", phone: phone || nameMatch.phone || "" });
+      autoCreatedIdRef.current = nameMatch.id;
+      boundToExistingRef.current = true;
+    } else if (autoCreatedIdRef.current && !boundToExistingRef.current) {
       saveCustomer({ id: autoCreatedIdRef.current, name, email, phone });
     } else {
+      boundToExistingRef.current = false;
+      autoCreatedIdRef.current = null; // drop any stale binding before the new record's id lands
       saveCustomer({ name, email, phone }).then(rec => { autoCreatedIdRef.current = rec.id; });
     }
     setDuplicateCandidate(null);
@@ -3835,6 +3894,7 @@ export default function TileEstimator() {
     setJobNotes(""); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProjectDesc("");
     projectDescManualRef.current = false;
     setDuplicateCandidate(null); duplicateIgnoreKeyRef.current = ""; autoCreatedIdRef.current = null;
+    boundToExistingRef.current = false; lastAutoFillRef.current = null; skipNextAutoSaveRef.current = false;
     setMarkupPercent(nv(settings.defaultMarkup, 40));
     setManualPrice(""); setShowBreakdown(false);
     setEditingRecordId(null); setEditingRecordType(null);
@@ -3858,6 +3918,9 @@ export default function TileEstimator() {
     setProjectDesc(record.projectDesc || "");
     projectDescManualRef.current = true; // respect the saved description; don't overwrite from job type
     setDuplicateCandidate(null); duplicateIgnoreKeyRef.current = ""; autoCreatedIdRef.current = null;
+    boundToExistingRef.current = false; lastAutoFillRef.current = null;
+    skipNextAutoSaveRef.current = true; // loaded snapshot contact info must not overwrite the customer record
+
     setMarkupMode(record.markupMode || "percent");
     setMarkupPercent(record.markupPercent || nv(settings.defaultMarkup, 40));
     setManualPrice("");
@@ -4982,6 +5045,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.13.1 — Bug fixes for customer auto-save. Typing an existing customer's name into the Name field no longer blanks out their saved email and phone — their contact info now fills into the form automatically, same as picking them from the dropdown. Loading a saved estimate or draft no longer silently overwrites the customer's current contact info with the older details stored on that estimate — the customer record only updates once you actually edit a customer field. And pausing mid-typing at a name that matches an existing customer (e.g. stopping at \\\"Sarah\\\" on the way to \\\"Sarah Williams\\\") no longer renames that existing customer when you finish typing — a separate record is created instead, and any auto-filled contact info is cleared if the name moves off the match before you've edited it",
           "v1.13.0 — Customer Name, Email, and Phone now save automatically as you type (no more \"Save as new customer\" button) — updates the matching customer if the name matches one you already have, or creates a new one. If the phone or email matches an existing customer but the name doesn't, you'll get a Merge / Save as new prompt instead of a silent duplicate. Project Description now auto-fills from the Job Type(s) selected on your area(s) — e.g. \"Kitchen Floor & Shower\" — until you type your own description; clearing the field resumes auto-fill. New ⇄ Merge action on the Customer tab lets you fold one customer into another, moving all their estimates over and removing the duplicate. Clicking into any sent estimate — from History, Accounting, or the Customer tab — now shows the exact same thing and offers the exact same actions: status badges, Charged/Cost/Profit/Margin, a status picker, Resend, Load into Estimator, Shopping List, Edit, Delete, and the full Line Items. Completed jobs stay locked (no Load, no Edit) everywhere, same as always",
           "v1.12.0 — Loading a sent estimate or draft and re-saving/re-sending it now updates that same record instead of creating a duplicate; sending a loaded draft removes the original. Accounting now only counts jobs marked Complete, and adds a Missed Opportunity $ total plus Uncompleted Jobs count. Accounting job rows are now tappable to expand the full cost/profit breakdown, change status, edit, or load into the estimator — split into Missed Opportunities and Completed Jobs sections. History is now three tabs — Open, Completed, Drafts — with Completed jobs locked (view-only) in both places",
           "v1.11.1 — Areas with a Job Type assigned now show that Job Type's name (Backsplash, Kitchen Floor, etc.) as their title everywhere — the live Cost Breakdown, the area card, the customer proposal, and every sent-estimate format — instead of a generic \"Area 1\" / \"Area 2\"",
