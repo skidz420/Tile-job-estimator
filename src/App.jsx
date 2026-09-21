@@ -2970,7 +2970,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.13.1";
+const APP_VERSION = "1.13.2";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -5045,6 +5045,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.13.2 — Maintenance release. No changes to how the app works — this update just confirms the new update process is running smoothly. If you see the update banner, tap it to refresh to the latest version",
           "v1.13.1 — Bug fixes for customer auto-save. Typing an existing customer's name into the Name field no longer blanks out their saved email and phone — their contact info now fills into the form automatically, same as picking them from the dropdown. Loading a saved estimate or draft no longer silently overwrites the customer's current contact info with the older details stored on that estimate — the customer record only updates once you actually edit a customer field. And pausing mid-typing at a name that matches an existing customer (e.g. stopping at \\\"Sarah\\\" on the way to \\\"Sarah Williams\\\") no longer renames that existing customer when you finish typing — a separate record is created instead, and any auto-filled contact info is cleared if the name moves off the match before you've edited it",
           "v1.13.0 — Customer Name, Email, and Phone now save automatically as you type (no more \"Save as new customer\" button) — updates the matching customer if the name matches one you already have, or creates a new one. If the phone or email matches an existing customer but the name doesn't, you'll get a Merge / Save as new prompt instead of a silent duplicate. Project Description now auto-fills from the Job Type(s) selected on your area(s) — e.g. \"Kitchen Floor & Shower\" — until you type your own description; clearing the field resumes auto-fill. New ⇄ Merge action on the Customer tab lets you fold one customer into another, moving all their estimates over and removing the duplicate. Clicking into any sent estimate — from History, Accounting, or the Customer tab — now shows the exact same thing and offers the exact same actions: status badges, Charged/Cost/Profit/Margin, a status picker, Resend, Load into Estimator, Shopping List, Edit, Delete, and the full Line Items. Completed jobs stay locked (no Load, no Edit) everywhere, same as always",
           "v1.12.0 — Loading a sent estimate or draft and re-saving/re-sending it now updates that same record instead of creating a duplicate; sending a loaded draft removes the original. Accounting now only counts jobs marked Complete, and adds a Missed Opportunity $ total plus Uncompleted Jobs count. Accounting job rows are now tappable to expand the full cost/profit breakdown, change status, edit, or load into the estimator — split into Missed Opportunities and Completed Jobs sections. History is now three tabs — Open, Completed, Drafts — with Completed jobs locked (view-only) in both places",
