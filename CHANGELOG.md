@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.13.2] - 2026-09-20
+### Changed
+- **Maintenance release** — version bump to verify the dual deployment pipeline (Netlify and home server auto-deploy from `main`). No functional changes to the app
+
 ## [1.13.1] - 2026-07-23
 ### Fixed
 - **Customer auto-save no longer wipes saved contact info** — typing an existing customer's name into the free-text Name field (instead of picking from the dropdown) previously updated their record with the empty Email/Phone fields, blanking out what was on file. An empty form field now never overwrites saved contact info (fill-forward, matching the Merge prompt's behavior), and the matched customer's email/phone now auto-fill into the form, same as the dropdown picker
