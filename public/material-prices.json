@@ -1,0 +1,50 @@
+{
+  "lastChecked": "2026-09-22",
+  "categories": [
+    {
+      "id": "thinset",
+      "name": "Thinset Mortar",
+      "unitNote": "per bag",
+      "items": [
+        {"store": "HD", "brand": "Custom Building Products", "product": "VersaBond, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-VersaBond-50-lb-Gray-Professional-Polymer-Modified-Thinset-Mortar-MTSG50/100162542", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Mapei", "product": "Ultraflex 2, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Mapei-Ultraflex-2-Gray-50-lb-Tile-Mortar-with-Polymer-2905823PP/202198587", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "FD", "brand": "Mapei", "product": "Ultraflex-2, white, 50 lb", "price": 29.65, "size": 50, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/mapei-installation-materials/mapei-ultraflex-2-white-mortar-100037126.html", "unavail": null}
+      ]
+    },
+    {
+      "id": "grout",
+      "name": "Unsanded Grout",
+      "unitNote": "per bag",
+      "items": [
+        {"store": "HD", "brand": "Custom Building Products", "product": "Polyblend Plus #115, platinum, 10 lb", "price": null, "size": 10, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-Polyblend-Plus-115-Platinum-10-lb-Unsanded-Grout-PBPG11510/313296535", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "LOW", "brand": "Mapei", "product": "Keracolor U, white, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/MAPEI-Keracolor-U-25-lb-White-Unsanded-Grout/1186219", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"},
+        {"store": "FD", "brand": "Mapei", "product": "KeraColor U, #77 Frost, 10 lb", "price": 13.48, "size": 10, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/tile-grout-installation-materials/mapei-77-frost-keracolor-unsanded-grout-100036300.html", "unavail": null}
+      ]
+    },
+    {
+      "id": "backer-board",
+      "name": "Cement Backer Board",
+      "unitNote": "per sheet",
+      "items": [
+        {"store": "HD", "brand": "James Hardie", "product": "HardieBacker, 1/2\", 3'x5' (15 sq ft)", "price": null, "size": 15, "sizeUnit": "sqft", "url": "https://www.homedepot.com/p/James-Hardie-Hardie-Backer-1-2-in-x-3-ft-x-5-ft-Cement-Backer-Board-220023/100170507", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "FD", "brand": "James Hardie", "product": "HardieBacker 500, 1/2\", 3'x5' (15 sq ft)", "price": 17.50, "size": 15, "sizeUnit": "sqft", "url": "https://www.flooranddecor.com/shower-systems-installation-materials/hardiebacker-500-cement-board-951309900.html", "unavail": null}
+      ]
+    },
+    {
+      "id": "waterproofing",
+      "name": "Waterproofing Membrane",
+      "unitNote": "per gallon",
+      "items": [
+        {"store": "HD", "brand": "Custom Building Products", "product": "RedGard, 1 gal", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.homedepot.com/p/Custom-Building-Products-RedGard-1-Gal-Waterproofing-and-Crack-Prevention-Membrane-LQWAF1/100169081", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"}
+      ]
+    },
+    {
+      "id": "spacers",
+      "name": "Tile Spacers, 1/8\"",
+      "unitNote": "per pack",
+      "items": [
+        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1,000-pack", "price": null, "size": 1000, "sizeUnit": "ct", "url": "https://www.homedepot.com/p/QEP-1-8-in-Tile-Spacers-1000-Pack-10281Q/100191220", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"}
+      ]
+    }
+  ]
+}
