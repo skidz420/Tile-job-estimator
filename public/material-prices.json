@@ -1,13 +1,13 @@
 {
-  "lastChecked": "2026-09-22",
+  "lastChecked": "2026-09-24",
   "categories": [
     {
       "id": "thinset",
       "name": "Thinset Mortar",
       "unitNote": "per bag",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "VersaBond, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-VersaBond-50-lb-Gray-Professional-Polymer-Modified-Thinset-Mortar-MTSG50/100162542", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "HD", "brand": "Mapei", "product": "Ultraflex 2, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Mapei-Ultraflex-2-Gray-50-lb-Tile-Mortar-with-Polymer-2905823PP/202198587", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Custom Building Products", "product": "VersaBond, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-VersaBond-50-lb-Gray-Professional-Polymer-Modified-Thinset-Mortar-MTSG50/100162542", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "HD", "brand": "Mapei", "product": "Ultraflex 2, gray, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Mapei-Ultraflex-2-Gray-50-lb-Tile-Mortar-with-Polymer-2905823PP/202198587", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Mapei", "product": "Ultraflex-2, white, 50 lb", "price": 29.65, "size": 50, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/mapei-installation-materials/mapei-ultraflex-2-white-mortar-100037126.html", "unavail": null}
       ]
     },
@@ -16,8 +16,8 @@
       "name": "Unsanded Grout",
       "unitNote": "per bag",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "Polyblend Plus #115, platinum, 10 lb", "price": null, "size": 10, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-Polyblend-Plus-115-Platinum-10-lb-Unsanded-Grout-PBPG11510/313296535", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "LOW", "brand": "Mapei", "product": "Keracolor U, white, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/MAPEI-Keracolor-U-25-lb-White-Unsanded-Grout/1186219", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Custom Building Products", "product": "Polyblend Plus #115, platinum, 10 lb", "price": null, "size": 10, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-Polyblend-Plus-115-Platinum-10-lb-Unsanded-Grout-PBPG11510/313296535", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "LOW", "brand": "Mapei", "product": "Keracolor U, white, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/MAPEI-Keracolor-U-25-lb-White-Unsanded-Grout/1186219", "unavail": "Lowe's blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Mapei", "product": "KeraColor U, #77 Frost, 10 lb", "price": 13.48, "size": 10, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/tile-grout-installation-materials/mapei-77-frost-keracolor-unsanded-grout-100036300.html", "unavail": null}
       ]
     },
@@ -26,9 +26,9 @@
       "name": "Sanded Grout",
       "unitNote": "per bag",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "Polyblend Plus #115, platinum, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-Polyblend-Plus-115-Platinum-25-lb-Sanded-Grout-PBPG11525/313291660", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "HD", "brand": "Mapei", "product": "Keracolor S, champagne, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Mapei-Keracolor-S-Champagne-25-lb-Sanded-Cement-Grout-5UJ505611PP/205416146", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "LOW", "brand": "Mapei", "product": "Keracolor S, white, 10 lb", "price": null, "size": 10, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/MAPEI-Keracolor-S-10-lb-White-Sanded-Grout/1188041", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Custom Building Products", "product": "Polyblend Plus #115, platinum, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-Polyblend-Plus-115-Platinum-25-lb-Sanded-Grout-PBPG11525/313291660", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "HD", "brand": "Mapei", "product": "Keracolor S, champagne, 25 lb", "price": null, "size": 25, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Mapei-Keracolor-S-Champagne-25-lb-Sanded-Cement-Grout-5UJ505611PP/205416146", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "LOW", "brand": "Mapei", "product": "Keracolor S, white, 10 lb", "price": null, "size": 10, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/MAPEI-Keracolor-S-10-lb-White-Sanded-Grout/1188041", "unavail": "Lowe's blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Mapei", "product": "KeraColor S, #77 Frost, 25 lb", "price": 14.48, "size": 25, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/tile-grout-installation-materials/mapei-77-frost-keracolor-sanded-grout-100035864.html", "unavail": null}
       ]
     },
@@ -37,7 +37,7 @@
       "name": "Cement Backer Board",
       "unitNote": "per sheet",
       "items": [
-        {"store": "HD", "brand": "James Hardie", "product": "HardieBacker, 1/2\", 3'x5' (15 sq ft)", "price": null, "size": 15, "sizeUnit": "sqft", "url": "https://www.homedepot.com/p/James-Hardie-Hardie-Backer-1-2-in-x-3-ft-x-5-ft-Cement-Backer-Board-220023/100170507", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "James Hardie", "product": "HardieBacker, 1/2\", 3'x5' (15 sq ft)", "price": null, "size": 15, "sizeUnit": "sqft", "url": "https://www.homedepot.com/p/James-Hardie-Hardie-Backer-1-2-in-x-3-ft-x-5-ft-Cement-Backer-Board-220023/100170507", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "James Hardie", "product": "HardieBacker 500, 1/2\", 3'x5' (15 sq ft)", "price": 17.50, "size": 15, "sizeUnit": "sqft", "url": "https://www.flooranddecor.com/shower-systems-installation-materials/hardiebacker-500-cement-board-951309900.html", "unavail": null}
       ]
     },
@@ -46,7 +46,7 @@
       "name": "Waterproofing Membrane",
       "unitNote": "per gallon",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "RedGard, 1 gal", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.homedepot.com/p/Custom-Building-Products-RedGard-1-Gal-Waterproofing-and-Crack-Prevention-Membrane-LQWAF1/100169081", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"}
+        {"store": "HD", "brand": "Custom Building Products", "product": "RedGard, 1 gal", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.homedepot.com/p/Custom-Building-Products-RedGard-1-Gal-Waterproofing-and-Crack-Prevention-Membrane-LQWAF1/100169081", "unavail": "Home Depot blocks automated price checks — enter manually in app"}
       ]
     },
     {
@@ -54,9 +54,9 @@
       "name": "Uncoupling / Crack-Isolation Membrane",
       "unitNote": "per roll",
       "items": [
-        {"store": "HD", "brand": "Schluter", "product": "DITRA, 54 sq ft roll", "price": null, "size": 54, "sizeUnit": "sqft", "url": "https://www.homedepot.com/p/Schluter-Ditra-54-sq-ft-3-ft-3-in-x-16-ft-5-in-x-1-8-in-Thick-Uncoupling-Membrane-DITRA5M/100143471", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Schluter", "product": "DITRA, 54 sq ft roll", "price": null, "size": 54, "sizeUnit": "sqft", "url": "https://www.homedepot.com/p/Schluter-Ditra-54-sq-ft-3-ft-3-in-x-16-ft-5-in-x-1-8-in-Thick-Uncoupling-Membrane-DITRA5M/100143471", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Schluter", "product": "DITRA, 150 sq ft roll", "price": 319.24, "size": 150, "sizeUnit": "sqft", "url": "https://www.flooranddecor.com/schluter-installation-materials/schluter-ditra-uncoupling-membrane-3ft.3in.-x-45ft.9in.-951500297.html", "unavail": null},
-        {"store": "LOW", "brand": "Schluter", "product": "DITRA, 54 sq ft roll", "price": null, "size": 54, "sizeUnit": "sqft", "url": "https://www.lowes.com/pd/Schluter-Systems-Ditra-54-sq-ft-Polyethylene-Waterproofing-Tile-Membrane/3580144", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"}
+        {"store": "LOW", "brand": "Schluter", "product": "DITRA, 54 sq ft roll", "price": null, "size": 54, "sizeUnit": "sqft", "url": "https://www.lowes.com/pd/Schluter-Systems-Ditra-54-sq-ft-Polyethylene-Waterproofing-Tile-Membrane/3580144", "unavail": "Lowe's blocks automated price checks — enter manually in app"}
       ]
     },
     {
@@ -64,7 +64,7 @@
       "name": "Tile Leveling System",
       "unitNote": "per kit",
       "items": [
-        {"store": "HD", "brand": "QEP", "product": "LASH Tile Leveling System Project-Pack, 200-pack (100 clips + 100 wedges)", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-Lash-Tile-Leveling-System-Project-Pack-100-1-16-in-White-Leveling-Clips-and-100-Wedges-200-Pack-99741/314956144", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "QEP", "product": "LASH Tile Leveling System Project-Pack, 200-pack (100 clips + 100 wedges)", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-Lash-Tile-Leveling-System-Project-Pack-100-1-16-in-White-Leveling-Clips-and-100-Wedges-200-Pack-99741/314956144", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Rubi", "product": "Delta Leveling System, 100-piece kit", "price": 56.84, "size": 100, "sizeUnit": "pieces", "url": "https://www.flooranddecor.com/installation-tools-tile-stone-installation-materials/rubi-delta-leveling-system-100837442.html", "unavail": null}
       ]
     },
@@ -73,9 +73,9 @@
       "name": "Edge Trim",
       "unitNote": "per piece",
       "items": [
-        {"store": "HD", "brand": "Schluter", "product": "Jolly, satin anodized aluminum, 1/2\" x 98.5\"", "price": null, "size": 98.5, "sizeUnit": "in", "url": "https://www.homedepot.com/p/Schluter-Jolly-Satin-Anodized-Aluminum-0-5-in-x-98-5-in-Metal-L-Angle-Tile-Edge-Trim-J125AE/328913499", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Schluter", "product": "Jolly, satin anodized aluminum, 1/2\" x 98.5\"", "price": null, "size": 98.5, "sizeUnit": "in", "url": "https://www.homedepot.com/p/Schluter-Jolly-Satin-Anodized-Aluminum-0-5-in-x-98-5-in-Metal-L-Angle-Tile-Edge-Trim-J125AE/328913499", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Schluter", "product": "Jolly, matte black, 3/8\" x 10 ft", "price": 33.34, "size": 120, "sizeUnit": "in", "url": "https://www.flooranddecor.com/schluter-installation-materials/schluter-jolly-edge-trim-3-8in.-x-10ft.-textured-color-coated-aluminum-matte-black-101029114.html", "unavail": null},
-        {"store": "LOW", "brand": "Schluter", "product": "Jolly, satin nickel anodized aluminum, 3/8\" x 98.5\"", "price": null, "size": 98.5, "sizeUnit": "in", "url": "https://www.lowes.com/pd/Schluter-Systems-Jolly-0-375-in-W-x-98-5-in-L-Satin-Nickel-Anodized-Aluminum-L-angle-Tile-Edge-Trim/5014775639", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"}
+        {"store": "LOW", "brand": "Schluter", "product": "Jolly, satin nickel anodized aluminum, 3/8\" x 98.5\"", "price": null, "size": 98.5, "sizeUnit": "in", "url": "https://www.lowes.com/pd/Schluter-Systems-Jolly-0-375-in-W-x-98-5-in-L-Satin-Nickel-Anodized-Aluminum-L-angle-Tile-Edge-Trim/5014775639", "unavail": "Lowe's blocks automated price checks — enter manually in app"}
       ]
     },
     {
@@ -83,8 +83,8 @@
       "name": "Grout Sealer",
       "unitNote": "per unit",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "Aqua Mix Sealer's Choice Gold, 4 qt (1 gal)", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.homedepot.com/p/Custom-Building-Products-Aqua-Mix-Sealer-s-Choice-Gold-4-qt-Penetrating-Sealer-for-Tile-Concrete-Porcelain-Stone-and-Grout-AMSC1/202907684", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "LOW", "brand": "Custom Building Products", "product": "TileLab Grout and Tile Sealer, 1 gal", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.lowes.com/pd/Classy-Custom-CUSTOM-Tilelab-Grout-and-Tile-Sealer-1-Gallon-Water-Based-Low-Odor-Penetrating-Sealer/8840587", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"}
+        {"store": "HD", "brand": "Custom Building Products", "product": "Aqua Mix Sealer's Choice Gold, 4 qt (1 gal)", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.homedepot.com/p/Custom-Building-Products-Aqua-Mix-Sealer-s-Choice-Gold-4-qt-Penetrating-Sealer-for-Tile-Concrete-Porcelain-Stone-and-Grout-AMSC1/202907684", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "LOW", "brand": "Custom Building Products", "product": "TileLab Grout and Tile Sealer, 1 gal", "price": null, "size": 1, "sizeUnit": "gal", "url": "https://www.lowes.com/pd/Classy-Custom-CUSTOM-Tilelab-Grout-and-Tile-Sealer-1-Gallon-Water-Based-Low-Odor-Penetrating-Sealer/8840587", "unavail": "Lowe's blocks automated price checks — enter manually in app"}
       ]
     },
     {
@@ -92,7 +92,7 @@
       "name": "Caulk",
       "unitNote": "per tube",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "Commercial #381, bright white, 10.1 fl oz silicone", "price": null, "size": 10.1, "sizeUnit": "fl oz", "url": "https://www.homedepot.com/p/Custom-Building-Products-Commercial-381-Bright-White-10-1-oz-Silicone-Caulk-CCSC381/202753956", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Custom Building Products", "product": "Commercial #381, bright white, 10.1 fl oz silicone", "price": null, "size": 10.1, "sizeUnit": "fl oz", "url": "https://www.homedepot.com/p/Custom-Building-Products-Commercial-381-Bright-White-10-1-oz-Silicone-Caulk-CCSC381/202753956", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Mapei", "product": "Mapesil T Plus, #5001 Alabaster, 10.1 fl oz silicone", "price": 16.79, "size": 10.1, "sizeUnit": "fl oz", "url": "https://www.flooranddecor.com/mapei-installation-materials/mapei-5001-alabastermapesil-t-plus-silicone-caulk-100985118.html", "unavail": null}
       ]
     },
@@ -101,8 +101,8 @@
       "name": "Self-Leveling Underlayment",
       "unitNote": "per bag",
       "items": [
-        {"store": "HD", "brand": "Custom Building Products", "product": "LevelQuik RS, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-LevelQuik-RS-50-lb-Indoor-Outdoor-Self-Leveling-Underlayment-LQ50/100192482", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "LOW", "brand": "Custom Building Products", "product": "LevelQuik RS, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/Custom-Building-Products-Custom-Building-Products-Levelor-Floor-Self-Level-50Lb-LQ50/5001239755", "unavail": "Lowe's blocked automated fetch (403 Forbidden)"},
+        {"store": "HD", "brand": "Custom Building Products", "product": "LevelQuik RS, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.homedepot.com/p/Custom-Building-Products-LevelQuik-RS-50-lb-Indoor-Outdoor-Self-Leveling-Underlayment-LQ50/100192482", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "LOW", "brand": "Custom Building Products", "product": "LevelQuik RS, 50 lb", "price": null, "size": 50, "sizeUnit": "lb", "url": "https://www.lowes.com/pd/Custom-Building-Products-Custom-Building-Products-Levelor-Floor-Self-Level-50Lb-LQ50/5001239755", "unavail": "Lowe's blocks automated price checks — enter manually in app"},
         {"store": "FD", "brand": "Mapei", "product": "Ultraplan 1 Plus, 50 lb", "price": 30.89, "size": 50, "sizeUnit": "lb", "url": "https://www.flooranddecor.com/mapei-lifetime-warranty/mapei-ultraplan-1-plus-self-leveling-underlayment-100783166.html", "unavail": null}
       ]
     },
@@ -111,10 +111,10 @@
       "name": "Tile Spacers",
       "unitNote": "per pack",
       "items": [
-        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/8\", 1,000-pack", "price": null, "size": 1000, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-8-in-Tile-Spacers-1000-Pack-10281Q/100191220", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/16\", 500-pack", "price": null, "size": 500, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-16-in-Tombstone-Style-Floor-and-Wall-Tile-Spacers-500-pack-10253Q/300488648", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 3/16\", 200-pack", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-3-16-in-Original-Job-Tough-Tombstone-Style-Tile-Spacers-for-Floor-and-Wall-Installations-200-Pack-10316Q/100135499", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"},
-        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/4\", 200-pack", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-4-in-Original-Job-Tough-Tombstone-Style-Tile-Spacers-200-pack-10005Q/100147317", "unavail": "Home Depot blocked automated fetch (403 Forbidden)"}
+        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/8\", 1,000-pack", "price": null, "size": 1000, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-8-in-Tile-Spacers-1000-Pack-10281Q/100191220", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/16\", 500-pack", "price": null, "size": 500, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-16-in-Tombstone-Style-Floor-and-Wall-Tile-Spacers-500-pack-10253Q/300488648", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 3/16\", 200-pack", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-3-16-in-Original-Job-Tough-Tombstone-Style-Tile-Spacers-for-Floor-and-Wall-Installations-200-Pack-10316Q/100135499", "unavail": "Home Depot blocks automated price checks — enter manually in app"},
+        {"store": "HD", "brand": "QEP", "product": "Tombstone-style, 1/4\", 200-pack", "price": null, "size": 200, "sizeUnit": "pieces", "url": "https://www.homedepot.com/p/QEP-1-4-in-Original-Job-Tough-Tombstone-Style-Tile-Spacers-200-pack-10005Q/100147317", "unavail": "Home Depot blocks automated price checks — enter manually in app"}
       ]
     }
   ]
