@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.15.0] - 2026-10-24
+### Added
+- **Install App button** — Settings now has an Install App box. On Android (Chrome) one tap brings up the install prompt to put the app on your home screen; on iPhone/iPad, where browsers don't allow a one-tap install, it shows the Share → Add to Home Screen steps instead. Once the app is running from the home screen, the box shows "✓ Installed". Help tab gets a matching "Install App" section
+
 ## [1.14.0] - 2026-10-24
 ### Added
 - **Charge by the piece** — services can now be priced as a flat amount each instead of per square foot, for work like installing a vanity for $250. In Settings → Services, choose **Charge By → Per Piece** and enter the price; on an estimate, check the service and enter how many. The price each and the quantity can both be overridden per job, and the charge doesn't depend on the area's square footage. Materials can still be attached to a per-piece service

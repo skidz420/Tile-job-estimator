@@ -1162,6 +1162,82 @@ function ServiceFormModal({ service, consumables, onSave, onDelete, onClose }) {
   );
 }
 
+// ─── Install App (add to home screen) ─────────────────────────────────────────
+// Chrome on Android fires `beforeinstallprompt` once, early — often before Settings is ever opened —
+// so it's captured here at module load and handed to whoever asks. iPhones/iPads have no such
+// event; Safari only supports the manual Share → Add to Home Screen route, so we show those steps.
+if (typeof window !== "undefined" && !window.__tjeInstallListening) {
+  window.__tjeInstallListening = true;
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    window.__tjeInstallEvent = e;
+    window.dispatchEvent(new Event("tje-install-change"));
+  });
+  window.addEventListener("appinstalled", () => {
+    window.__tjeInstallEvent = null;
+    window.__tjeInstalled = true;
+    window.dispatchEvent(new Event("tje-install-change"));
+  });
+}
+function isRunningInstalled() {
+  try {
+    return !!window.__tjeInstalled
+      || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+      || window.navigator.standalone === true;
+  } catch (e) { return false; }
+}
+function useInstallApp() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const h = () => bump(n => n + 1);
+    window.addEventListener("tje-install-change", h);
+    return () => window.removeEventListener("tje-install-change", h);
+  }, []);
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || "")
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  async function promptInstall() {
+    const ev = window.__tjeInstallEvent;
+    if (!ev) return;
+    try {
+      ev.prompt();
+      await ev.userChoice;
+    } catch (e) { /* user dismissed or browser refused — nothing to do */ }
+    window.__tjeInstallEvent = null; // a prompt event can only be used once
+    window.dispatchEvent(new Event("tje-install-change"));
+  }
+  return { installed: isRunningInstalled(), canPrompt: !!window.__tjeInstallEvent, isIOS, promptInstall };
+}
+function InstallAppCard() {
+  const { installed, canPrompt, isIOS, promptInstall } = useInstallApp();
+  return (
+    <div style={{ marginTop: 12, padding: "14px 16px", background: "#0f0d0a", border: "1px solid #2e2518", borderRadius: 8 }}>
+      <div style={{ fontSize: 11, color: "#c19748", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>
+        Install App
+      </div>
+      {installed ? (
+        <div style={{ fontSize: 13, color: "#6dc47a", fontFamily: "sans-serif" }}>✓ Installed — you're running it from your home screen.</div>
+      ) : canPrompt ? (
+        <>
+          <div style={{ fontSize: 12, color: "#5a4f38", fontFamily: "sans-serif", marginBottom: 12, fontStyle: "italic" }}>
+            Put the app on your home screen so it opens full-screen like any other app, and works without a signal.
+          </div>
+          <button onClick={promptInstall} style={{
+            width: "100%", padding: "11px 0", background: "#1a1610", border: "1px solid #c19748",
+            borderRadius: 8, cursor: "pointer", color: "#c19748", fontSize: 13, fontWeight: 600,
+            fontFamily: "sans-serif", letterSpacing: 1,
+          }}>⬇ Install App</button>
+        </>
+      ) : (
+        <div style={{ fontSize: 12.5, color: "#8a7d65", fontFamily: "sans-serif", lineHeight: 1.6 }}>
+          {isIOS
+            ? "On iPhone/iPad: tap the Share button in Safari, then “Add to Home Screen”."
+            : "Open your browser's ⋮ menu and tap “Install app” or “Add to Home screen”. (If you don't see it, reload this page once and check again.)"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Settings Page ────────────────────────────────────────────────────────────
 const SETTINGS_MENU = [
   { key: "contractor",  label: "Contractor Info",     desc: "Your business name, logo & contact details" },
@@ -1737,6 +1813,8 @@ function SettingsPage({ settings, onSave, onExport, onImport }) {
             />
           </div>
         </div>
+
+        <InstallAppCard />
       </div>
 
       {pricingReview && (
@@ -3025,7 +3103,7 @@ function CustomerPresentation({ settings, customerName, projectDesc, customerPri
 
 
 // ─── Version Check Banner ─────────────────────────────────────────────────────
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.15.0";
 
 function UpdateBanner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -5093,6 +5171,19 @@ function HelpPage() {
       ],
     },
     {
+      title: "Install App (Home Screen)",
+      icon: "📲",
+      content: [
+        { type: "p", text: "Install the app so it sits on your home screen and opens full-screen like any other app." },
+        { type: "bullets", items: [
+          "Go to ⚙ Settings and scroll to the Install App box at the bottom",
+          "On Android, tap Install App and confirm — that's it",
+          "On iPhone/iPad, tap the Share button in Safari, then Add to Home Screen (iPhones don't allow a one-tap install)",
+          "If you don't see the button, the app may already be installed, or reload the page once and look again",
+        ]},
+      ],
+    },
+    {
       title: "Misc Supplies & Default Markup",
       icon: "🔩",
       content: [
@@ -5128,6 +5219,7 @@ function HelpPage() {
       icon: "📝",
       content: [
         { type: "bullets", items: [
+          "v1.15.0 — New: Install App button in Settings. On Android, tap it to put the app on your home screen in one step; on iPhone/iPad it shows the Share → Add to Home Screen steps. It switches to a ✓ Installed message once the app is on your home screen",
           "v1.14.0 — New: charge by the piece. Services can now be priced as a flat price each (like installing a vanity for $250) instead of per square foot — set it in Settings → Services with Charge By → Per Piece, then enter how many on each estimate. It works on its own too — no square footage or tile needed for a piece-only job. Existing services keep working exactly as before, and the quantity shows on the sent estimate and proposal",
           "v1.13.2 — Maintenance release. No changes to how the app works — this update just confirms the new update process is running smoothly. If you see the update banner, tap it to refresh to the latest version",
           "v1.13.1 — Bug fixes for customer auto-save. Typing an existing customer's name into the Name field no longer blanks out their saved email and phone — their contact info now fills into the form automatically, same as picking them from the dropdown. Loading a saved estimate or draft no longer silently overwrites the customer's current contact info with the older details stored on that estimate — the customer record only updates once you actually edit a customer field. And pausing mid-typing at a name that matches an existing customer (e.g. stopping at \\\"Sarah\\\" on the way to \\\"Sarah Williams\\\") no longer renames that existing customer when you finish typing — a separate record is created instead, and any auto-filled contact info is cleared if the name moves off the match before you've edited it",
