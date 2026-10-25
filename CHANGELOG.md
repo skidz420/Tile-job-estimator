@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.14.0] - 2026-10-24
+### Added
+- **Charge by the piece** — services can now be priced as a flat amount each instead of per square foot, for work like installing a vanity for $250. In Settings → Services, choose **Charge By → Per Piece** and enter the price; on an estimate, check the service and enter how many. The price each and the quantity can both be overridden per job, and the charge doesn't depend on the area's square footage. Materials can still be attached to a per-piece service
+- **Standalone piece jobs** — an area with no square footage and no tile type now calculates as long as at least one per-piece service is checked (e.g. a vanity-only job). Per-sqft figures, tile lines, and "0 sqft" text are hidden for those jobs on the breakdown, customer presentation, and sent estimates; History/Drafts list the service name in place of a tile name
+- The quantity shows on the Cost Breakdown, sent estimate, and proposal (e.g. "Vanity Install (x2)")
+- Pricing export/import now carries the per-piece setting and price, and flags a difference in it as a conflict
+
+### Notes
+- Existing services are unchanged — services saved before this version are treated as per-sqft
+
 ## [1.13.2] - 2026-09-20
 ### Changed
 - **Maintenance release** — version bump to verify the dual deployment pipeline (Netlify and home server auto-deploy from `main`). No functional changes to the app
